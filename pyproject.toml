@@ -35,7 +35,7 @@ dev = [
 ]
 
 [project.scripts]
-agent-debugger = "agent_debugger.cli:main"
+agent-debugger = "agent_debugger.ui.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/liwh9527/agent-debugger"

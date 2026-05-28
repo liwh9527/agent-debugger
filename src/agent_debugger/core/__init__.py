@@ -1,8 +1,3 @@
-"""Agent Debugger — Interactive debugger for AI Agent loops."""
-
-__version__ = "0.1.0"
-
-from agent_debugger.analysis.analyzer import TraceAnalyzer
 from agent_debugger.core.loader import load_trace
 from agent_debugger.core.schema import (
     AgentTrace,
@@ -18,6 +13,5 @@ __all__ = [
     "Iteration",
     "TokenUsage",
     "ToolCall",
-    "TraceAnalyzer",
     "load_trace",
 ]

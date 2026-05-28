@@ -7,7 +7,8 @@ from rich.console import Console
 from rich.table import Table
 
 from agent_debugger import __version__
-from agent_debugger.loader import load_trace
+from agent_debugger.analysis.analyzer import TraceAnalyzer
+from agent_debugger.core.loader import load_trace
 
 console = Console()
 
@@ -23,15 +24,16 @@ def main() -> None:
 def info(trace_file: str) -> None:
     """Show summary info for a trace file."""
     trace = load_trace(trace_file)
+    analyzer = TraceAnalyzer(trace)
 
     console.print(f"\n[bold]Agent:[/bold] {trace.agent_name}")
     console.print(f"[bold]Model:[/bold] {trace.model}")
-    console.print(f"[bold]Iterations:[/bold] {trace.total_iterations}")
-    console.print(f"[bold]Total Tokens:[/bold] {trace.total_tokens:,}")
-    if trace.has_errors:
+    console.print(f"[bold]Iterations:[/bold] {analyzer.total_iterations}")
+    console.print(f"[bold]Total Tokens:[/bold] {analyzer.total_tokens:,}")
+    if analyzer.has_errors:
         console.print("[bold red]Errors:[/bold red] Yes")
 
-    tool_counts = trace.tool_call_counts
+    tool_counts = analyzer.tool_call_counts
     if tool_counts:
         console.print()
         table = Table(title="Tool Calls")

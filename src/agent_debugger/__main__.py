@@ -1,3 +1,3 @@
-from agent_debugger.cli import main
+from agent_debugger.ui.cli import main
 
 main()

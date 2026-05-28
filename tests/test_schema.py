@@ -1,9 +1,10 @@
-from pathlib import Path
-
-from agent_debugger.loader import load_trace
-from agent_debugger.schema import AgentTrace, Iteration, TokenUsage, ToolCall
-
-EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+from agent_debugger.core.schema import (
+    AgentTrace,
+    ContextWindow,
+    Iteration,
+    TokenUsage,
+    ToolCall,
+)
 
 
 def test_tool_call_model():
@@ -12,47 +13,49 @@ def test_tool_call_model():
     assert tc.arguments == {"path": "foo.txt"}
 
 
+def test_tool_call_result_dict():
+    tc = ToolCall(name="api_call", result={"status": 200, "body": "ok"})
+    assert isinstance(tc.result, dict)
+    assert tc.result["status"] == 200
+
+
+def test_token_usage_defaults():
+    tu = TokenUsage()
+    assert tu.prompt_tokens == 0
+    assert tu.total_tokens == 0
+
+
+def test_context_window():
+    cw = ContextWindow(used_tokens=80000, max_tokens=128000)
+    assert cw.used_tokens == 80000
+    assert cw.max_tokens == 128000
+
+
+def test_context_window_defaults():
+    cw = ContextWindow()
+    assert cw.used_tokens == 0
+    assert cw.max_tokens is None
+
+
 def test_iteration_defaults():
     it = Iteration(index=0)
     assert it.think is None
     assert it.tool_calls == []
     assert it.token_usage.total_tokens == 0
+    assert it.context_window is None
 
 
-def test_agent_trace_properties():
-    trace = AgentTrace(
-        agent_name="test",
-        model="test-model",
-        iterations=[
-            Iteration(
-                index=0,
-                tool_calls=[ToolCall(name="read_file"), ToolCall(name="edit_file")],
-                token_usage=TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150),
-            ),
-            Iteration(
-                index=1,
-                tool_calls=[ToolCall(name="read_file")],
-                token_usage=TokenUsage(prompt_tokens=200, completion_tokens=80, total_tokens=280),
-            ),
-        ],
+def test_iteration_with_context_window():
+    it = Iteration(
+        index=0,
+        context_window=ContextWindow(used_tokens=5000, max_tokens=128000),
     )
-    assert trace.total_iterations == 2
-    assert trace.total_tokens == 430
-    assert trace.tool_call_counts == {"read_file": 2, "edit_file": 1}
-    assert not trace.has_errors
+    assert it.context_window is not None
+    assert it.context_window.used_tokens == 5000
 
 
-def test_agent_trace_with_error():
-    trace = AgentTrace(
-        iterations=[Iteration(index=0, error="Something went wrong")],
-    )
-    assert trace.has_errors
-
-
-def test_load_sample_trace():
-    trace = load_trace(EXAMPLES_DIR / "sample_trace.json")
-    assert isinstance(trace, AgentTrace)
-    assert trace.agent_name == "coding-assistant"
-    assert trace.total_iterations == 3
-    assert trace.total_tokens == 6450
-    assert "read_file" in trace.tool_call_counts
+def test_agent_trace_defaults():
+    trace = AgentTrace()
+    assert trace.agent_name == "unknown"
+    assert trace.model == "unknown"
+    assert trace.iterations == []

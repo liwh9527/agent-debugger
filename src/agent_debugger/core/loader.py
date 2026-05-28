@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent_debugger.schema import AgentTrace
+from agent_debugger.core.schema import AgentTrace
 
 
 def load_trace(path: str | Path) -> AgentTrace:
