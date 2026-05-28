@@ -26,10 +26,20 @@ def info(trace_file: str) -> None:
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
 
-    console.print(f"\n[bold]Agent:[/bold] {trace.agent_name}")
+    source = trace.metadata.get("source")
+    source_label = {"claude_code": "Claude Code transcript"}.get(
+        source, "native JSON"
+    )
+
+    console.print(f"\n[bold]Source:[/bold] {source_label}")
+    console.print(f"[bold]Agent:[/bold] {trace.agent_name}")
     console.print(f"[bold]Model:[/bold] {trace.model}")
     console.print(f"[bold]Iterations:[/bold] {analyzer.total_iterations}")
     console.print(f"[bold]Total Tokens:[/bold] {analyzer.total_tokens:,}")
+    if trace.start_time:
+        console.print(f"[bold]Start:[/bold] {trace.start_time:%Y-%m-%d %H:%M:%S}")
+    if trace.end_time:
+        console.print(f"[bold]End:[/bold] {trace.end_time:%Y-%m-%d %H:%M:%S}")
     if analyzer.has_errors:
         console.print("[bold red]Errors:[/bold red] Yes")
 

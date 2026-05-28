@@ -24,7 +24,7 @@ def test_load_file_not_found():
 def test_load_wrong_extension(tmp_path):
     txt_file = tmp_path / "trace.txt"
     txt_file.write_text("{}")
-    with pytest.raises(ValueError, match="Expected .json"):
+    with pytest.raises(ValueError, match="Unsupported file format"):
         load_trace(txt_file)
 
 
