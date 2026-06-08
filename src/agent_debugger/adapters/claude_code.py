@@ -82,7 +82,8 @@ class ClaudeCodeAdapter(BaseAdapter):
             ts = msg.get("timestamp")
             if ts:
                 try:
-                    timestamps.append(datetime.fromisoformat(ts))
+                    ts_clean = ts.replace("Z", "+00:00") if isinstance(ts, str) else ts
+                    timestamps.append(datetime.fromisoformat(ts_clean))
                 except (ValueError, TypeError):
                     continue
         if not timestamps:
