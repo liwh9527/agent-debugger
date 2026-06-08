@@ -24,14 +24,15 @@ class ClaudeCodeAdapter(BaseAdapter):
             return False
         try:
             with open(path) as f:
-                for line in f:
+                for i, line in enumerate(f):
+                    if i >= 20:
+                        break
                     line = line.strip()
                     if not line:
                         continue
                     obj = json.loads(line)
-                    if obj.get("type") in ("assistant", "user", "last-prompt"):
+                    if obj.get("type") in ("assistant", "user", "last-prompt", "permission-mode"):
                         return True
-                    break
         except (json.JSONDecodeError, OSError):
             return False
         return False
