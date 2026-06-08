@@ -97,12 +97,16 @@ class ClaudeCodeAdapter(BaseAdapter):
 
         tool_results = self._collect_tool_results(messages)
 
+        seq_index = 0
         for idx, group in enumerate(assistant_groups):
             iteration = self._build_single_iteration(
                 idx, group, tool_results
             )
             if iteration:
+                # Renumber sequentially to avoid gaps
+                iteration.index = seq_index
                 iterations.append(iteration)
+                seq_index += 1
 
         return iterations
 

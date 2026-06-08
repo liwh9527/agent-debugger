@@ -58,6 +58,8 @@
         const grid = document.getElementById("stats-grid");
         const cost = analysisData.cost_estimate;
         const duration = computeTotalDuration();
+        const effPercent = (analysisData.token_efficiency * 100).toFixed(1);
+        const effColor = effPercent >= 10 ? '#10b981' : effPercent >= 3 ? '#f59e0b' : '#ef4444';
 
         grid.innerHTML = `
             <div class="stat-card">
@@ -73,7 +75,7 @@
             <div class="stat-card">
                 <div class="stat-label">Total Tokens</div>
                 <div class="stat-value">${formatNumber(analysisData.total_tokens)}</div>
-                <div class="stat-sub">Efficiency: ${(analysisData.token_efficiency * 100).toFixed(1)}%</div>
+                <div class="stat-sub">Efficiency: <span style="color:${effColor}">${effPercent}%</span></div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Estimated Cost</div>
@@ -97,24 +99,43 @@
     }
 
     function computeTotalDuration() {
+        let ms;
         if (traceData.start_time && traceData.end_time) {
-            const ms = new Date(traceData.end_time) - new Date(traceData.start_time);
-            if (ms < 1000) return `${ms}ms`;
-            if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-            return `${(ms / 60000).toFixed(1)}m`;
+            ms = new Date(traceData.end_time) - new Date(traceData.start_time);
+        } else {
+            ms = traceData.iterations.reduce((sum, it) => sum + (it.duration_ms || 0), 0);
         }
-        const totalMs = traceData.iterations.reduce((sum, it) => sum + (it.duration_ms || 0), 0);
-        if (totalMs === 0) return "N/A";
-        if (totalMs < 1000) return `${totalMs}ms`;
-        if (totalMs < 60000) return `${(totalMs / 1000).toFixed(1)}s`;
-        return `${(totalMs / 60000).toFixed(1)}m`;
+        if (ms === 0) return "N/A";
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        if (ms < 3600000) return `${(ms / 60000).toFixed(1)}m`;
+        if (ms < 86400000) {
+            const h = Math.floor(ms / 3600000);
+            const m = Math.floor((ms % 3600000) / 60000);
+            return `${h}h ${m}m`;
+        }
+        const d = Math.floor(ms / 86400000);
+        const h = Math.floor((ms % 86400000) / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        return `${d}d ${h}h ${m}m`;
     }
 
     function renderToolChart() {
         const ctx = document.getElementById("chart-tools").getContext("2d");
         const counts = analysisData.tool_call_counts;
-        const labels = Object.keys(counts);
-        const values = Object.values(counts);
+
+        // Sort by count descending, keep top 7, merge rest into "Other"
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        let labels, values;
+        if (sorted.length > 8) {
+            const top = sorted.slice(0, 7);
+            const otherSum = sorted.slice(7).reduce((sum, [_, v]) => sum + v, 0);
+            labels = [...top.map(([k]) => k), "Other"];
+            values = [...top.map(([_, v]) => v), otherSum];
+        } else {
+            labels = sorted.map(([k]) => k);
+            values = sorted.map(([_, v]) => v);
+        }
 
         const palette = [
             "#7c3aed", "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
@@ -236,7 +257,13 @@
                             label: function(context) {
                                 const idx = context.dataIndex;
                                 const actual = (utilization[idx] * 100).toFixed(1);
-                                return `Actual: ${actual}% (capped at 100% in chart)`;
+                                const tokens = (traceData.iterations[idx] && traceData.iterations[idx].token_usage)
+                                    ? traceData.iterations[idx].token_usage.prompt_tokens
+                                    : 0;
+                                if (context.datasetIndex === 0) {
+                                    return `Iteration #${idx}: ${actual}% (${formatNumber(tokens)} prompt tokens)`;
+                                }
+                                return context.dataset.label;
                             }
                         }
                     }
@@ -258,7 +285,14 @@
         const container = document.getElementById("timeline-container");
         const timeline = analysisData.timeline;
 
-        container.innerHTML = timeline
+        const totalIterations = traceData.iterations.length;
+        const shownIterations = timeline.length;
+        let timelineHeader = '';
+        if (shownIterations < totalIterations) {
+            timelineHeader = `<div class="timeline-header-note">${shownIterations} of ${totalIterations} iterations shown (${totalIterations - shownIterations} empty iterations hidden)</div>`;
+        }
+
+        container.innerHTML = timelineHeader + timeline
             .map((item) => {
                 const toolChips = item.tool_names
                     .map((t) => `<span class="chip">${escapeHtml(t)}</span>`)
@@ -320,6 +354,13 @@
             if (data.error) {
                 html += `<h4>Error</h4><pre style="color:var(--error)">${escapeHtml(data.error)}</pre>`;
             }
+
+            if (!html) {
+                html = `<p style="color:var(--text-dim);font-style:italic">No detailed content available for this iteration.</p>`;
+            }
+
+            // Always show token info
+            html += `<div class="tool-duration" style="margin-top:0.5rem">Tokens: ${formatNumber(data.token_usage?.total_tokens || 0)}</div>`;
 
             el.innerHTML = html;
             el.classList.add("expanded");

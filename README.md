@@ -124,9 +124,7 @@ Adapters auto-detect the file format. Just pass any supported file to any comman
 agent-debugger serve trace.json
 ```
 
-![Overview](docs/screenshots/overview.png)
-
-![Timeline](docs/screenshots/timeline.png)
+![Demo](docs/screenshots/demo.gif)
 
 The web UI provides four tabs:
 
@@ -134,6 +132,14 @@ The web UI provides four tabs:
 - **Timeline** — visual iteration cards with expand/collapse
 - **Context Window** — utilization graph showing how context fills over iterations
 - **Iterations** — detailed per-iteration view with full tool call inspection
+
+<details>
+<summary>Screenshots</summary>
+
+![Overview](docs/screenshots/overview.png)
+![Context Window](docs/screenshots/context-window.png)
+
+</details>
 
 ## Programmatic Usage
 

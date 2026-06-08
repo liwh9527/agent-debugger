@@ -276,10 +276,12 @@ def analyze(trace_file: str, max_context: int, output_format: str, output: str |
     table.add_column("Iter", justify="right", style="cyan", width=4)
     table.add_column("Utilization", width=50)
     table.add_column("%", justify="right", style="green", width=6)
+    max_util_pct = max(utilization) * 100 if utilization else 100
     for i, util in enumerate(utilization):
-        bar_width = int(util * 40)
+        util_pct = util * 100
+        bar_width = int((util_pct / max_util_pct) * 40) if max_util_pct > 0 else 0
         bar_str = "█" * bar_width + "░" * (40 - bar_width)
-        table.add_row(str(i), bar_str, f"{util * 100:.1f}%")
+        table.add_row(str(i), bar_str, f"{util_pct:.1f}%")
     console.print(table)
 
     console.print(f"\n[bold]Token Efficiency:[/bold] {efficiency:.4f}")
@@ -310,6 +312,28 @@ def analyze(trace_file: str, max_context: int, output_format: str, output: str |
                 )
     else:
         console.print("[green]No anomalies detected.[/green]")
+
+    # Summary line
+    console.print()
+    if anomalies:
+        error_count = sum(1 for a in anomalies if a["type"] == "error")
+        spike_count = sum(1 for a in anomalies if a["type"] == "token_spike")
+        parts = []
+        if spike_count:
+            parts.append(f"{spike_count} token spikes")
+        if error_count:
+            parts.append(f"{error_count} errors")
+        console.print(
+            f"[bold yellow]Summary:[/bold yellow] {', '.join(parts)} detected "
+            f"across {len(trace.iterations)} iterations."
+        )
+    else:
+        max_util = max(utilization) * 100 if utilization else 0
+        console.print(
+            f"[bold green]Summary:[/bold green] Context healthy "
+            f"(peak {max_util:.0f}%), no anomalies "
+            f"across {len(trace.iterations)} iterations."
+        )
 
     console.print()
 
