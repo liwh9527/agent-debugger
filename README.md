@@ -124,7 +124,9 @@ Adapters auto-detect the file format. Just pass any supported file to any comman
 agent-debugger serve trace.json
 ```
 
-<!-- TODO: Add screenshot -->
+![Overview](docs/screenshots/overview.png)
+
+![Timeline](docs/screenshots/timeline.png)
 
 The web UI provides four tabs:
 
