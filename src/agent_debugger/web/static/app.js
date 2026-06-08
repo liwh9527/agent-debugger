@@ -146,7 +146,12 @@
 
     function renderTokensBarChart() {
         const ctx = document.getElementById("chart-tokens").getContext("2d");
-        const iterations = traceData.iterations;
+        let iterations = traceData.iterations;
+
+        if (iterations.length > 100) {
+            const step = Math.ceil(iterations.length / 100);
+            iterations = iterations.filter((_, i) => i % step === 0);
+        }
 
         new Chart(ctx, {
             type: "bar",
@@ -165,7 +170,7 @@
                 responsive: true,
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { color: "#64748b" }, grid: { color: "rgba(63,63,95,0.3)" } },
+                    x: { ticks: { color: "#64748b", maxTicksLimit: 20 }, grid: { color: "rgba(63,63,95,0.3)" } },
                     y: { ticks: { color: "#64748b" }, grid: { color: "rgba(63,63,95,0.3)" } },
                 },
             },
@@ -176,6 +181,25 @@
         const ctx = document.getElementById("chart-context").getContext("2d");
         const utilization = analysisData.context_utilization;
         const labels = utilization.map((_, i) => `#${i}`);
+        const percentData = utilization.map((v) => Math.min(v * 100, 100));
+        const maxUtil = Math.max(...utilization) * 100;
+        const yMax = maxUtil <= 100 ? 100 : 100;
+
+        const overflowIndices = [];
+        utilization.forEach((v, i) => {
+            if (v > 1.0) overflowIndices.push(i);
+        });
+
+        const overflowAnnotation = overflowIndices.length > 0
+            ? `<div class="context-overflow-note">⚠️ Context exceeded 100% at iteration #${overflowIndices[0]} — compaction likely active (${overflowIndices.length} iterations above limit)</div>`
+            : "";
+
+        const chartContainer = document.getElementById("chart-context").closest(".chart-card") || document.getElementById("chart-context").parentElement;
+        const existingNote = chartContainer.querySelector(".context-overflow-note");
+        if (existingNote) existingNote.remove();
+        if (overflowAnnotation) {
+            chartContainer.insertAdjacentHTML("beforeend", overflowAnnotation);
+        }
 
         new Chart(ctx, {
             type: "line",
@@ -184,12 +208,12 @@
                 datasets: [
                     {
                         label: "Context Utilization %",
-                        data: utilization.map((v) => v * 100),
+                        data: percentData,
                         borderColor: "#7c3aed",
                         backgroundColor: "rgba(124, 58, 237, 0.1)",
                         fill: true,
                         tension: 0.3,
-                        pointRadius: 3,
+                        pointRadius: utilization.length > 50 ? 0 : 3,
                         pointBackgroundColor: "#a78bfa",
                     },
                     {
@@ -207,12 +231,21 @@
                 responsive: true,
                 plugins: {
                     legend: { labels: { color: "#94a3b8" } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const idx = context.dataIndex;
+                                const actual = (utilization[idx] * 100).toFixed(1);
+                                return `Actual: ${actual}% (capped at 100% in chart)`;
+                            }
+                        }
+                    }
                 },
                 scales: {
-                    x: { ticks: { color: "#64748b" }, grid: { color: "rgba(63,63,95,0.3)" } },
+                    x: { ticks: { color: "#64748b", maxTicksLimit: 30 }, grid: { color: "rgba(63,63,95,0.3)" } },
                     y: {
                         min: 0,
-                        max: 100,
+                        max: yMax,
                         ticks: { color: "#64748b", callback: (v) => v + "%" },
                         grid: { color: "rgba(63,63,95,0.3)" },
                     },
