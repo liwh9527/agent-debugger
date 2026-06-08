@@ -1,0 +1,298 @@
+{
+  "id": "run-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "agent",
+  "run_type": "chain",
+  "start_time": "2026-06-01T14:00:00.000Z",
+  "end_time": "2026-06-01T14:02:45.000Z",
+  "inputs": {
+    "messages": [
+      {
+        "type": "human",
+        "content": "What is the population of Tokyo and what is that number divided by 7?"
+      }
+    ]
+  },
+  "outputs": {
+    "messages": [
+      {
+        "type": "ai",
+        "content": "The population of Tokyo is approximately 13.96 million. Dividing that by 7 gives approximately 1,994,286."
+      }
+    ]
+  },
+  "extra": {
+    "metadata": {
+      "langgraph_version": "0.2.0",
+      "langgraph_checkpoint_ns": ""
+    }
+  },
+  "child_runs": [
+    {
+      "id": "run-11111111-1111-1111-1111-111111111111",
+      "name": "ChatOpenAI",
+      "run_type": "llm",
+      "start_time": "2026-06-01T14:00:01.000Z",
+      "end_time": "2026-06-01T14:00:04.500Z",
+      "inputs": {
+        "messages": [
+          [
+            {
+              "type": "system",
+              "content": "You are a helpful assistant with access to search and calculator tools."
+            },
+            {
+              "type": "human",
+              "content": "What is the population of Tokyo and what is that number divided by 7?"
+            }
+          ]
+        ]
+      },
+      "outputs": {
+        "generations": [
+          [
+            {
+              "text": "",
+              "message": {
+                "type": "ai",
+                "content": "I need to search for the population of Tokyo first, then use the calculator to divide it by 7.",
+                "tool_calls": [
+                  {
+                    "name": "tavily_search",
+                    "args": {"query": "current population of Tokyo"},
+                    "id": "call_abc123"
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "llm_output": {
+          "token_usage": {
+            "prompt_tokens": 185,
+            "completion_tokens": 62,
+            "total_tokens": 247
+          },
+          "model_name": "gpt-4o"
+        }
+      },
+      "extra": {
+        "metadata": {
+          "langgraph_node": "agent",
+          "langgraph_step": 1,
+          "langgraph_triggers": ["start:agent"]
+        },
+        "invocation_params": {
+          "model_name": "gpt-4o",
+          "temperature": 0.0
+        }
+      },
+      "child_runs": []
+    },
+    {
+      "id": "run-22222222-2222-2222-2222-222222222222",
+      "name": "tavily_search",
+      "run_type": "tool",
+      "start_time": "2026-06-01T14:00:05.000Z",
+      "end_time": "2026-06-01T14:00:07.200Z",
+      "inputs": {
+        "input": "{\"query\": \"current population of Tokyo\"}"
+      },
+      "outputs": {
+        "output": "According to the latest data, the population of Tokyo is approximately 13,960,000 (13.96 million) as of 2025."
+      },
+      "extra": {
+        "metadata": {
+          "langgraph_node": "tools",
+          "langgraph_step": 2,
+          "langgraph_triggers": ["agent"]
+        }
+      },
+      "child_runs": []
+    },
+    {
+      "id": "run-33333333-3333-3333-3333-333333333333",
+      "name": "ChatOpenAI",
+      "run_type": "llm",
+      "start_time": "2026-06-01T14:00:08.000Z",
+      "end_time": "2026-06-01T14:00:11.000Z",
+      "inputs": {
+        "messages": [
+          [
+            {
+              "type": "system",
+              "content": "You are a helpful assistant with access to search and calculator tools."
+            },
+            {
+              "type": "human",
+              "content": "What is the population of Tokyo and what is that number divided by 7?"
+            },
+            {
+              "type": "ai",
+              "content": "I need to search for the population of Tokyo first, then use the calculator to divide it by 7.",
+              "tool_calls": [
+                {
+                  "name": "tavily_search",
+                  "args": {"query": "current population of Tokyo"},
+                  "id": "call_abc123"
+                }
+              ]
+            },
+            {
+              "type": "tool",
+              "content": "According to the latest data, the population of Tokyo is approximately 13,960,000 (13.96 million) as of 2025.",
+              "tool_call_id": "call_abc123"
+            }
+          ]
+        ]
+      },
+      "outputs": {
+        "generations": [
+          [
+            {
+              "text": "",
+              "message": {
+                "type": "ai",
+                "content": "Now I have the population of Tokyo. Let me calculate that divided by 7.",
+                "tool_calls": [
+                  {
+                    "name": "calculator",
+                    "args": {"expression": "13960000 / 7"},
+                    "id": "call_def456"
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "llm_output": {
+          "token_usage": {
+            "prompt_tokens": 320,
+            "completion_tokens": 48,
+            "total_tokens": 368
+          },
+          "model_name": "gpt-4o"
+        }
+      },
+      "extra": {
+        "metadata": {
+          "langgraph_node": "agent",
+          "langgraph_step": 3,
+          "langgraph_triggers": ["tools"]
+        },
+        "invocation_params": {
+          "model_name": "gpt-4o",
+          "temperature": 0.0
+        }
+      },
+      "child_runs": []
+    },
+    {
+      "id": "run-44444444-4444-4444-4444-444444444444",
+      "name": "calculator",
+      "run_type": "tool",
+      "start_time": "2026-06-01T14:00:11.500Z",
+      "end_time": "2026-06-01T14:00:11.800Z",
+      "inputs": {
+        "input": "{\"expression\": \"13960000 / 7\"}"
+      },
+      "outputs": {
+        "output": "1994285.7142857143"
+      },
+      "extra": {
+        "metadata": {
+          "langgraph_node": "tools",
+          "langgraph_step": 4,
+          "langgraph_triggers": ["agent"]
+        }
+      },
+      "child_runs": []
+    },
+    {
+      "id": "run-55555555-5555-5555-5555-555555555555",
+      "name": "ChatOpenAI",
+      "run_type": "llm",
+      "start_time": "2026-06-01T14:00:12.000Z",
+      "end_time": "2026-06-01T14:00:15.000Z",
+      "inputs": {
+        "messages": [
+          [
+            {
+              "type": "system",
+              "content": "You are a helpful assistant with access to search and calculator tools."
+            },
+            {
+              "type": "human",
+              "content": "What is the population of Tokyo and what is that number divided by 7?"
+            },
+            {
+              "type": "ai",
+              "content": "I need to search for the population of Tokyo first, then use the calculator to divide it by 7.",
+              "tool_calls": [
+                {
+                  "name": "tavily_search",
+                  "args": {"query": "current population of Tokyo"},
+                  "id": "call_abc123"
+                }
+              ]
+            },
+            {
+              "type": "tool",
+              "content": "According to the latest data, the population of Tokyo is approximately 13,960,000 (13.96 million) as of 2025.",
+              "tool_call_id": "call_abc123"
+            },
+            {
+              "type": "ai",
+              "content": "Now I have the population of Tokyo. Let me calculate that divided by 7.",
+              "tool_calls": [
+                {
+                  "name": "calculator",
+                  "args": {"expression": "13960000 / 7"},
+                  "id": "call_def456"
+                }
+              ]
+            },
+            {
+              "type": "tool",
+              "content": "1994285.7142857143",
+              "tool_call_id": "call_def456"
+            }
+          ]
+        ]
+      },
+      "outputs": {
+        "generations": [
+          [
+            {
+              "text": "The population of Tokyo is approximately 13.96 million. Dividing that by 7 gives approximately 1,994,286.",
+              "message": {
+                "type": "ai",
+                "content": "The population of Tokyo is approximately 13.96 million. Dividing that by 7 gives approximately 1,994,286.",
+                "tool_calls": []
+              }
+            }
+          ]
+        ],
+        "llm_output": {
+          "token_usage": {
+            "prompt_tokens": 480,
+            "completion_tokens": 42,
+            "total_tokens": 522
+          },
+          "model_name": "gpt-4o"
+        }
+      },
+      "extra": {
+        "metadata": {
+          "langgraph_node": "agent",
+          "langgraph_step": 5,
+          "langgraph_triggers": ["tools"]
+        },
+        "invocation_params": {
+          "model_name": "gpt-4o",
+          "temperature": 0.0
+        }
+      },
+      "child_runs": []
+    }
+  ]
+}

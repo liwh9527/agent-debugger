@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Debugger</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="header">
+        <div class="header-brand">
+            <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+            </svg>
+            <h1>Agent Debugger</h1>
+        </div>
+        <div class="header-meta" id="header-meta"></div>
+    </header>
+
+    <nav class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="timeline">Timeline</button>
+        <button class="tab" data-tab="context">Context Window</button>
+        <button class="tab" data-tab="iterations">Iterations</button>
+    </nav>
+
+    <main class="content">
+        <section class="tab-panel active" id="panel-overview">
+            <div class="stats-grid" id="stats-grid"></div>
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3>Tool Usage</h3>
+                    <canvas id="chart-tools"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Tokens per Iteration</h3>
+                    <canvas id="chart-tokens"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-panel" id="panel-timeline">
+            <div class="timeline" id="timeline-container"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-context">
+            <div class="chart-card chart-card-full">
+                <h3>Context Window Utilization</h3>
+                <canvas id="chart-context"></canvas>
+            </div>
+        </section>
+
+        <section class="tab-panel" id="panel-iterations">
+            <div class="iterations-table-wrap">
+                <table class="iterations-table" id="iterations-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="index">#</th>
+                            <th data-sort="tools">Tools</th>
+                            <th data-sort="tokens">Tokens</th>
+                            <th data-sort="duration">Duration</th>
+                            <th data-sort="error">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="iteration-detail" id="iteration-detail"></div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

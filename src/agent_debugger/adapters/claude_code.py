@@ -70,7 +70,7 @@ class ClaudeCodeAdapter(BaseAdapter):
         for msg in messages:
             model = msg.get("message", {}).get("model")
             if model:
-                return model
+                return str(model)
         return "unknown"
 
     def _extract_time_range(
