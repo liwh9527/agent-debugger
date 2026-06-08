@@ -30,21 +30,31 @@ class TraceAnalyzer:
         return any(it.error is not None for it in self.trace.iterations)
 
     def context_utilization_trend(self, max_context: int = 200000) -> list[float]:
-        cumulative = 0
         trend: list[float] = []
         for it in self.trace.iterations:
-            cumulative += it.token_usage.prompt_tokens
-            trend.append(cumulative / max_context)
+            prompt = it.token_usage.prompt_tokens
+            if prompt > 0:
+                trend.append(prompt / max_context)
+            else:
+                # For zero-token iterations, carry forward the previous value
+                trend.append(trend[-1] if trend else 0.0)
         return trend
 
     def context_growth_rate(self) -> list[float]:
         rates: list[float] = []
         iterations = self.trace.iterations
-        for i in range(1, len(iterations)):
-            prev = iterations[i - 1].token_usage.total_tokens
-            curr = iterations[i].token_usage.total_tokens
-            rates.append(curr - prev)
-        return rates
+        if len(iterations) <= 1:
+            return []
+        prev_prompt = 0
+        for it in iterations:
+            curr_prompt = it.token_usage.prompt_tokens
+            if curr_prompt > 0:
+                rates.append(curr_prompt - prev_prompt)
+                prev_prompt = curr_prompt
+            else:
+                rates.append(0)
+        # Remove the first element since there's no "previous" for iteration 0
+        return rates[1:] if len(rates) > 1 else rates
 
     def token_efficiency(self) -> float:
         total_prompt = sum(it.token_usage.prompt_tokens for it in self.trace.iterations)
@@ -84,3 +94,40 @@ class TraceAnalyzer:
             "output_cost": output_cost,
             "total_cost": input_cost + output_cost,
         }
+
+    def detect_anomalies(self) -> list[dict]:
+        """Detect anomalous iterations using IQR-based outlier detection."""
+        anomalies: list[dict] = []
+
+        # Token spike detection using IQR
+        tokens = [
+            it.token_usage.total_tokens
+            for it in self.trace.iterations
+            if it.token_usage.total_tokens > 0
+        ]
+        if len(tokens) >= 4:
+            sorted_tokens = sorted(tokens)
+            q1 = sorted_tokens[len(sorted_tokens) // 4]
+            q3 = sorted_tokens[3 * len(sorted_tokens) // 4]
+            iqr = q3 - q1
+            upper_threshold = q3 + 1.5 * iqr
+
+            for it in self.trace.iterations:
+                if it.token_usage.total_tokens > upper_threshold:
+                    anomalies.append({
+                        "iteration": it.index,
+                        "type": "token_spike",
+                        "value": it.token_usage.total_tokens,
+                        "threshold": upper_threshold,
+                    })
+
+        # Error detection
+        for it in self.trace.iterations:
+            if it.error:
+                anomalies.append({
+                    "iteration": it.index,
+                    "type": "error",
+                    "message": it.error,
+                })
+
+        return anomalies

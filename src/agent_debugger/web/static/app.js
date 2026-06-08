@@ -329,24 +329,48 @@
         }
     }
 
+    let iterationsPage = 0;
+    const ITEMS_PER_PAGE = 50;
+
     function renderIterationsTable() {
-        const tbody = document.querySelector("#iterations-table tbody");
         const iterations = traceData.iterations;
+        const totalPages = Math.ceil(iterations.length / ITEMS_PER_PAGE);
+        const start = iterationsPage * ITEMS_PER_PAGE;
+        const end = Math.min(start + ITEMS_PER_PAGE, iterations.length);
+        const pageItems = iterations.slice(start, end);
 
-        tbody.innerHTML = iterations
-            .map((it) => {
-                const toolNames = it.tool_calls.map((tc) => tc.name).join(", ");
-                return `
-                <tr data-index="${it.index}">
-                    <td>${it.index}</td>
-                    <td>${escapeHtml(toolNames) || "<em style='color:var(--text-dim)'>none</em>"}</td>
-                    <td>${formatNumber(it.token_usage.total_tokens)}</td>
-                    <td>${it.duration_ms != null ? it.duration_ms + "ms" : "—"}</td>
-                    <td class="${it.error ? "status-err" : "status-ok"}">${it.error ? "Error" : "OK"}</td>
-                </tr>`;
-            })
-            .join("");
+        const tbody = document.querySelector("#iterations-table tbody");
+        tbody.innerHTML = pageItems.map((it) => {
+            const toolNames = it.tool_calls.map((tc) => tc.name).join(", ");
+            return `<tr data-index="${it.index}">
+                <td>${it.index}</td>
+                <td>${escapeHtml(toolNames) || "<em style='color:var(--text-dim)'>none</em>"}</td>
+                <td>${formatNumber(it.token_usage.total_tokens)}</td>
+                <td>${it.duration_ms != null ? it.duration_ms + "ms" : "—"}</td>
+                <td class="${it.error ? "status-err" : "status-ok"}">${it.error ? "Error" : "OK"}</td>
+            </tr>`;
+        }).join("");
 
+        // Pagination controls
+        let paginationEl = document.getElementById("iterations-pagination");
+        if (!paginationEl) {
+            paginationEl = document.createElement("div");
+            paginationEl.id = "iterations-pagination";
+            paginationEl.className = "pagination";
+            document.querySelector("#iterations-table").parentElement.appendChild(paginationEl);
+        }
+
+        if (totalPages > 1) {
+            paginationEl.innerHTML = `
+                <button class="page-btn" onclick="changeIterationsPage(-1)" ${iterationsPage === 0 ? "disabled" : ""}>&#8592; Prev</button>
+                <span class="page-info">Page ${iterationsPage + 1} of ${totalPages} (${iterations.length} iterations)</span>
+                <button class="page-btn" onclick="changeIterationsPage(1)" ${iterationsPage >= totalPages - 1 ? "disabled" : ""}>Next &#8594;</button>
+            `;
+        } else {
+            paginationEl.innerHTML = "";
+        }
+
+        // Row click handlers
         tbody.querySelectorAll("tr").forEach((row) => {
             row.addEventListener("click", () => {
                 showIterationDetail(parseInt(row.dataset.index));
@@ -357,6 +381,12 @@
             th.addEventListener("click", () => sortTable(th.dataset.sort));
         });
     }
+
+    window.changeIterationsPage = function (delta) {
+        const totalPages = Math.ceil(traceData.iterations.length / ITEMS_PER_PAGE);
+        iterationsPage = Math.max(0, Math.min(totalPages - 1, iterationsPage + delta));
+        renderIterationsTable();
+    };
 
     let currentSort = { field: null, asc: true };
 

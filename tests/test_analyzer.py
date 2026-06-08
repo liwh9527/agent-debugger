@@ -98,9 +98,10 @@ def test_context_utilization_trend():
     analyzer = TraceAnalyzer(_make_trace())
     trend = analyzer.context_utilization_trend(max_context=100000)
     assert len(trend) == 3
+    # Each value is per-iteration prompt_tokens / max_context (not cumulative)
     assert trend[0] == 1000 / 100000
-    assert trend[1] == 3000 / 100000
-    assert trend[2] == 6000 / 100000
+    assert trend[1] == 2000 / 100000
+    assert trend[2] == 3000 / 100000
 
 
 def test_context_utilization_trend_default_max():
@@ -114,12 +115,45 @@ def test_context_utilization_trend_empty():
     assert analyzer.context_utilization_trend() == []
 
 
+def test_context_utilization_trend_zero_tokens_carry_forward():
+    trace = AgentTrace(
+        iterations=[
+            Iteration(
+                index=0,
+                token_usage=TokenUsage(
+                    prompt_tokens=5000, completion_tokens=100, total_tokens=5100
+                ),
+            ),
+            Iteration(
+                index=1,
+                token_usage=TokenUsage(
+                    prompt_tokens=0, completion_tokens=0, total_tokens=0
+                ),
+            ),
+            Iteration(
+                index=2,
+                token_usage=TokenUsage(
+                    prompt_tokens=8000, completion_tokens=200, total_tokens=8200
+                ),
+            ),
+        ],
+    )
+    analyzer = TraceAnalyzer(trace)
+    trend = analyzer.context_utilization_trend(max_context=100000)
+    assert len(trend) == 3
+    assert trend[0] == 5000 / 100000
+    # Zero-token iteration carries forward the previous value
+    assert trend[1] == 5000 / 100000
+    assert trend[2] == 8000 / 100000
+
+
 def test_context_growth_rate():
     analyzer = TraceAnalyzer(_make_trace())
     rates = analyzer.context_growth_rate()
+    # Growth rate uses prompt_tokens difference between iterations
     assert len(rates) == 2
-    assert rates[0] == 2150 - 1100
-    assert rates[1] == 3080 - 2150
+    assert rates[0] == 2000 - 1000
+    assert rates[1] == 3000 - 2000
 
 
 def test_context_growth_rate_single_iteration():
@@ -179,3 +213,54 @@ def test_cost_estimate_custom_prices():
     total_completion = 330
     assert cost["input_cost"] == (total_prompt / 1_000_000) * 10.0
     assert cost["output_cost"] == (total_completion / 1_000_000) * 30.0
+
+
+def test_detect_anomalies_no_anomalies():
+    """Normal trace with similar token counts should have no token_spike anomalies."""
+    trace = AgentTrace(
+        iterations=[
+            Iteration(index=0, token_usage=TokenUsage(total_tokens=100)),
+            Iteration(index=1, token_usage=TokenUsage(total_tokens=110)),
+            Iteration(index=2, token_usage=TokenUsage(total_tokens=105)),
+            Iteration(index=3, token_usage=TokenUsage(total_tokens=95)),
+        ],
+    )
+    analyzer = TraceAnalyzer(trace)
+    anomalies = analyzer.detect_anomalies()
+    assert anomalies == []
+
+
+def test_detect_anomalies_token_spike():
+    """One iteration with 10x tokens should be detected as a spike."""
+    trace = AgentTrace(
+        iterations=[
+            Iteration(index=0, token_usage=TokenUsage(total_tokens=100)),
+            Iteration(index=1, token_usage=TokenUsage(total_tokens=110)),
+            Iteration(index=2, token_usage=TokenUsage(total_tokens=105)),
+            Iteration(index=3, token_usage=TokenUsage(total_tokens=95)),
+            Iteration(index=4, token_usage=TokenUsage(total_tokens=1000)),
+        ],
+    )
+    analyzer = TraceAnalyzer(trace)
+    anomalies = analyzer.detect_anomalies()
+    spike_anomalies = [a for a in anomalies if a["type"] == "token_spike"]
+    assert len(spike_anomalies) == 1
+    assert spike_anomalies[0]["iteration"] == 4
+    assert spike_anomalies[0]["value"] == 1000
+    assert "threshold" in spike_anomalies[0]
+
+
+def test_detect_anomalies_error():
+    """Iterations with errors should be detected."""
+    trace = AgentTrace(
+        iterations=[
+            Iteration(index=0, token_usage=TokenUsage(total_tokens=100)),
+            Iteration(index=1, token_usage=TokenUsage(total_tokens=100), error="fail"),
+        ],
+    )
+    analyzer = TraceAnalyzer(trace)
+    anomalies = analyzer.detect_anomalies()
+    error_anomalies = [a for a in anomalies if a["type"] == "error"]
+    assert len(error_anomalies) == 1
+    assert error_anomalies[0]["iteration"] == 1
+    assert error_anomalies[0]["message"] == "fail"

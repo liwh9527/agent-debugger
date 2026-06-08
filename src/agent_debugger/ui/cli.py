@@ -28,7 +28,14 @@ def main() -> None:
 
 @main.command()
 @click.argument("trace_file", type=click.Path(exists=True))
-def info(trace_file: str) -> None:
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["rich", "json"]),
+    default="rich",
+    help="Output format.",
+)
+def info(trace_file: str, output_format: str) -> None:
     """Show summary info for a trace file."""
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
@@ -38,6 +45,21 @@ def info(trace_file: str) -> None:
         "claude_code": "Claude Code transcript",
         "langgraph": "LangGraph/LangSmith trace",
     }.get(str(source) if source else "", "native JSON")
+
+    if output_format == "json":
+        data = {
+            "agent_name": trace.agent_name,
+            "model": trace.model,
+            "total_iterations": analyzer.total_iterations,
+            "total_tokens": analyzer.total_tokens,
+            "tool_call_counts": analyzer.tool_call_counts,
+            "start_time": trace.start_time.isoformat() if trace.start_time else None,
+            "end_time": trace.end_time.isoformat() if trace.end_time else None,
+            "has_errors": analyzer.has_errors,
+            "source": source_label,
+        }
+        click.echo(json.dumps(data, indent=2))
+        return
 
     console.print(f"\n[bold]Source:[/bold] {source_label}")
     console.print(f"[bold]Agent:[/bold] {trace.agent_name}")
@@ -74,7 +96,31 @@ def info(trace_file: str) -> None:
     default="rich",
     help="Output format.",
 )
-def timeline(trace_file: str, verbose: bool, output_format: str) -> None:
+@click.option("--head", type=int, default=None, help="Show only first N iterations.")
+@click.option("--tail", type=int, default=None, help="Show only last N iterations.")
+@click.option(
+    "--filter",
+    "filter_tool",
+    type=str,
+    default=None,
+    help="Show only iterations that used this tool.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Write output to file instead of stdout.",
+)
+def timeline(
+    trace_file: str,
+    verbose: bool,
+    output_format: str,
+    head: int | None,
+    tail: int | None,
+    filter_tool: str | None,
+    output: str | None,
+) -> None:
     """Display iteration-by-iteration timeline of a trace."""
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
@@ -101,12 +147,39 @@ def timeline(trace_file: str, verbose: bool, output_format: str) -> None:
                 })
         else:
             data = analyzer.timeline_summary()
-        click.echo(json.dumps(data, indent=2))
+
+        if filter_tool:
+            data = [
+                item
+                for item in data
+                if filter_tool in (item.get("tool_names") or [])  # type: ignore[operator]
+            ]
+        if head is not None:
+            data = data[:head]
+        elif tail is not None:
+            data = data[-tail:]
+
+        if output:
+            with open(output, "w") as f:
+                f.write(json.dumps(data, indent=2))
+            click.echo(f"Written to {output}")
+        else:
+            click.echo(json.dumps(data, indent=2))
         return
 
     console.print(f"\n[bold]Timeline:[/bold] {trace.agent_name} ({trace.model})\n")
 
-    for it in trace.iterations:
+    iterations = list(trace.iterations)
+    if filter_tool:
+        iterations = [
+            it for it in iterations if filter_tool in [tc.name for tc in it.tool_calls]
+        ]
+    if head is not None:
+        iterations = iterations[:head]
+    elif tail is not None:
+        iterations = iterations[-tail:]
+
+    for it in iterations:
         border_style = "red" if it.error else "green"
         title = f"Iteration {it.index}"
         if it.duration_ms is not None:
@@ -161,7 +234,14 @@ def timeline(trace_file: str, verbose: bool, output_format: str) -> None:
     default="rich",
     help="Output format.",
 )
-def analyze(trace_file: str, max_context: int, output_format: str) -> None:
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Write output to file instead of stdout.",
+)
+def analyze(trace_file: str, max_context: int, output_format: str, output: str | None) -> None:
     """Analyze context window usage, cost, and anomalies."""
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
@@ -171,23 +251,7 @@ def analyze(trace_file: str, max_context: int, output_format: str) -> None:
     efficiency = analyzer.token_efficiency()
     cost = analyzer.cost_estimate()
 
-    anomalies: list[dict] = []
-    if len(growth) > 1:
-        avg_growth = sum(growth) / len(growth) if growth else 0
-        for i, rate in enumerate(growth):
-            if avg_growth > 0 and rate > avg_growth * 2:
-                anomalies.append({
-                    "iteration": i + 1,
-                    "type": "token_spike",
-                    "value": rate,
-                })
-    for it in trace.iterations:
-        if it.error:
-            anomalies.append({
-                "iteration": it.index,
-                "type": "error",
-                "message": it.error,
-            })
+    anomalies = analyzer.detect_anomalies()
 
     if output_format == "json":
         data = {
@@ -197,7 +261,12 @@ def analyze(trace_file: str, max_context: int, output_format: str) -> None:
             "cost_estimate": cost,
             "anomalies": anomalies,
         }
-        click.echo(json.dumps(data, indent=2))
+        if output:
+            with open(output, "w") as f:
+                f.write(json.dumps(data, indent=2))
+            click.echo(f"Written to {output}")
+        else:
+            click.echo(json.dumps(data, indent=2))
         return
 
     console.print(f"\n[bold]Analysis:[/bold] {trace.agent_name} ({trace.model})\n")
@@ -228,9 +297,11 @@ def analyze(trace_file: str, max_context: int, output_format: str) -> None:
         console.print("[bold red]Anomalies Detected:[/bold red]")
         for anomaly in anomalies:
             if anomaly["type"] == "token_spike":
+                val = anomaly["value"]
+                thresh = anomaly["threshold"]
                 console.print(
                     f"  ⚠ Iteration {anomaly['iteration']}: "
-                    f"token spike ({anomaly['value']:.0f} tokens growth)"
+                    f"token spike ({val:.0f} tokens, threshold: {thresh:.0f})"
                 )
             elif anomaly["type"] == "error":
                 console.print(
@@ -253,7 +324,14 @@ def analyze(trace_file: str, max_context: int, output_format: str) -> None:
     default="rich",
     help="Output format.",
 )
-def inspect(trace_file: str, iteration_index: int, output_format: str) -> None:
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Write output to file instead of stdout.",
+)
+def inspect(trace_file: str, iteration_index: int, output_format: str, output: str | None) -> None:
     """Inspect a single iteration in full detail."""
     trace = load_trace(trace_file)
 
@@ -296,7 +374,12 @@ def inspect(trace_file: str, iteration_index: int, output_format: str) -> None:
             "duration_ms": it.duration_ms,
             "error": it.error,
         }
-        click.echo(json.dumps(data, indent=2))
+        if output:
+            with open(output, "w") as f:
+                f.write(json.dumps(data, indent=2))
+            click.echo(f"Written to {output}")
+        else:
+            click.echo(json.dumps(data, indent=2))
         return
 
     console.print(

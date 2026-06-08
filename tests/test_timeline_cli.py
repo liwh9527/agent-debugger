@@ -121,3 +121,29 @@ class TestInspectCommand:
         runner = CliRunner()
         result = runner.invoke(main, ["inspect", "/nonexistent/file.json", "0"])
         assert result.exit_code != 0
+
+
+class TestInfoCommand:
+    def test_basic_output(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["info", SAMPLE_TRACE])
+        assert result.exit_code == 0
+        assert "Agent:" in result.output
+        assert "Iterations:" in result.output
+
+    def test_json_format(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["info", SAMPLE_TRACE, "--format", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "agent_name" in data
+        assert "model" in data
+        assert "total_iterations" in data
+        assert "total_tokens" in data
+        assert "tool_call_counts" in data
+        assert "start_time" in data
+        assert "end_time" in data
+        assert "has_errors" in data
+        assert "source" in data
+        assert isinstance(data["tool_call_counts"], dict)
+        assert data["total_iterations"] == 3
