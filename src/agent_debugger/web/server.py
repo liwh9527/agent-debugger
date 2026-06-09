@@ -175,7 +175,7 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
     def _handle_sessions(self) -> None:
         from agent_debugger.core.scanner import scan_sessions
 
-        sessions = scan_sessions()
+        sessions = scan_sessions(include_subagents=False)
         current_path = _server_state.get("path", "")
         for s in sessions:
             s["is_current"] = s["path"] == current_path

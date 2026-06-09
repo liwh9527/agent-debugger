@@ -690,6 +690,14 @@ body {
         gap: 8px;
     }
 
+    .header-meta {
+        display: none;
+    }
+
+    .header h1 {
+        font-size: 1rem;
+    }
+
     .sidebar {
         width: 85vw;
         max-width: 320px;
@@ -697,17 +705,19 @@ body {
 
     .tabs {
         overflow-x: auto;
+        padding-right: 2rem;
     }
 
     .tabs::after {
-        content: '';
+        content: '\203A';
         position: absolute;
         right: 0;
-        top: 0;
-        bottom: 0;
-        width: 40px;
-        background: linear-gradient(to right, transparent, var(--bg-primary));
-        pointer-events: none;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--accent-light);
+        font-size: 1.2rem;
+        padding: 0.5rem;
+        background: linear-gradient(to right, transparent, var(--bg-secondary));
     }
 
     .content {
@@ -876,15 +886,15 @@ body {
 }
 
 .toggle-label {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     color: var(--text-secondary);
     font-size: 0.8rem;
+    cursor: pointer;
     margin-top: 0.5rem;
     margin-bottom: 0;
     padding: 0;
-    cursor: pointer;
 }
 
 .toggle-label input[type="checkbox"] {
@@ -1203,4 +1213,32 @@ body {
 
 .stat-value, .context-metric-value {
     font-weight: 700;
+}
+
+/* Insight Banner */
+.insight-card {
+    padding: 0.9rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+}
+
+.insight-healthy {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #6ee7b7;
+}
+
+.insight-warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fcd34d;
+}
+
+/* Diagnostics category summary */
+.diag-category-summary {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
 }

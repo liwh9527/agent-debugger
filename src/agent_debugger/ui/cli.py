@@ -284,6 +284,18 @@ def timeline(
     default=None,
     help="Exit with code 1 if token efficiency is below threshold.",
 )
+@click.option(
+    "--input-price",
+    type=float,
+    default=3.0,
+    help="Price per 1M input tokens (default: $3).",
+)
+@click.option(
+    "--output-price",
+    type=float,
+    default=15.0,
+    help="Price per 1M output tokens (default: $15).",
+)
 def analyze(
     trace_file: str,
     max_context: int,
@@ -292,6 +304,8 @@ def analyze(
     fail_if_cost_above: float | None,
     fail_if_errors: bool,
     fail_if_efficiency_below: float | None,
+    input_price: float,
+    output_price: float,
 ) -> None:
     """Analyze context window usage, cost, and anomalies."""
     trace = load_trace(trace_file)
@@ -300,7 +314,7 @@ def analyze(
     utilization = analyzer.context_utilization_trend(max_context)
     growth = analyzer.context_growth_rate()
     efficiency = analyzer.token_efficiency()
-    cost = analyzer.cost_estimate()
+    cost = analyzer.cost_estimate(input_price=input_price, output_price=output_price)
 
     anomalies = analyzer.detect_anomalies()
 
@@ -541,11 +555,21 @@ def inspect(trace_file: str, iteration_index: int, output_format: str, output: s
 
 
 @main.command()
-@click.argument("trace_file", type=click.Path(exists=True))
+@click.argument("trace_file", type=click.Path(exists=True), required=False, default=None)
 @click.option("--port", default=8080, help="Server port.")
 @click.option("--no-open", is_flag=True, help="Don't open browser automatically.")
-def serve(trace_file: str, port: int, no_open: bool) -> None:
-    """Launch web UI to visualize a trace."""
+def serve(trace_file: str | None, port: int, no_open: bool) -> None:
+    """Launch web UI to visualize a trace. If no file given, opens the most recent session."""
+    if trace_file is None:
+        sessions = scan_sessions()
+        if not sessions:
+            click.echo("No Claude Code sessions found. Specify a trace file path.")
+            raise SystemExit(1)
+        # Sort by last_modified descending, pick first
+        sessions.sort(key=lambda s: s.get("last_modified") or "", reverse=True)
+        trace_file = sessions[0]["path"]
+        click.echo(f"Auto-selected: {trace_file}")
+
     trace = load_trace(trace_file)
     console.print(f"\n[bold]Starting web UI[/bold] on http://localhost:{port}")
     console.print(f"[dim]Trace:[/dim] {trace.agent_name} ({trace.model})")
@@ -676,9 +700,10 @@ def _format_delta_int(delta: int) -> str:
     type=click.Choice(["rich", "json"]),
     default="rich",
 )
-def scan(sort: str, limit: int, output_format: str) -> None:
+@click.option("--include-subagents", is_flag=True, help="Include subagent sessions.")
+def scan(sort: str, limit: int, output_format: str, include_subagents: bool) -> None:
     """Scan for Claude Code sessions on this machine."""
-    sessions = scan_sessions()
+    sessions = scan_sessions(include_subagents=include_subagents)
 
     # Sort
     sort_keys = {
@@ -702,16 +727,15 @@ def scan(sort: str, limit: int, output_format: str) -> None:
 
     table = Table(title="Claude Code Sessions")
     table.add_column("#", justify="right", style="dim", width=4)
-    table.add_column("Path", style="cyan", max_width=40)
-    table.add_column("Agent", style="blue")
+    table.add_column("Session", style="cyan", max_width=30)
     table.add_column("Model", style="magenta")
     table.add_column("Tokens", justify="right", style="green")
     table.add_column("Est. Cost", justify="right", style="yellow")
     table.add_column("Duration", justify="right")
-    table.add_column("Last Modified", style="dim")
+    table.add_column("Date", style="dim")
 
     for i, s in enumerate(sessions, 1):
-        path_display = shorten_path(s["path"])
+        session_name = s.get("project_name") or shorten_path(s["path"])
         tokens_display = f"{s['estimated_tokens']:,}"
         cost_display = f"${s['estimated_cost']:.4f}"
 
@@ -741,8 +765,7 @@ def scan(sort: str, limit: int, output_format: str) -> None:
 
         table.add_row(
             str(i),
-            path_display,
-            s["agent_name"],
+            session_name,
             s["model"],
             tokens_display,
             cost_display,
@@ -752,6 +775,11 @@ def scan(sort: str, limit: int, output_format: str) -> None:
 
     console.print(table)
     console.print(f"\n[dim]Found {len(sessions)} session(s)[/dim]")
+    console.print()
+    console.print(
+        "[dim]Tip: run [cyan]agent-debugger serve[/cyan] to open the"
+        " most recent session[/dim]"
+    )
 
 
 @main.command()

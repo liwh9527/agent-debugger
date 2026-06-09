@@ -13,49 +13,66 @@ def extract_project_name(path_str: str) -> str:
 
     Path pattern: ~/.claude/projects/-Users-x-Documents-project-myapp/abc.jsonl
     The directory name encodes the original project path with dashes.
+    Subagent paths contain /subagents/ and get prefixed with parent project name.
     """
-    parent = Path(path_str).parent.name  # e.g. "-Users-liwh-Documents-project-myapp"
+    parts = Path(path_str).parts
 
-    # Remove leading dash, split by dash, find meaningful segments
-    parts = parent.lstrip("-").split("-")
+    # Find the project directory (the one under .claude/projects/)
+    project_dir = None
+    for i, part in enumerate(parts):
+        if part == "projects" and i + 1 < len(parts):
+            project_dir = parts[i + 1]
+            break
 
-    # Common path segments to skip when looking for project identity
-    skip_prefixes = {"Users", "Documents", "home", "src", "code"}
+    if not project_dir:
+        return Path(path_str).stem[:20]
 
-    # Find meaningful segments after skipping known prefixes and username
-    meaningful = []
-    skip_next_as_username = False
-    for p in parts:
-        if not p:
+    # Check if this is a subagent
+    is_subagent = "subagents" in parts
+
+    # Decode project dir: "-Users-liwh-Documents-project-myapp" -> "myapp"
+    segments = project_dir.lstrip("-").split("-")
+    # Skip common prefixes
+    skip = {"Users", "Documents", "home", "project", "projects", "src", "code"}
+    # Also skip the username (typically the segment after "Users")
+    meaningful: list[str] = []
+    skip_next = False
+    for s in segments:
+        if s in skip:
+            skip_next = s == "Users"  # skip username after "Users"
             continue
-        if p == "Users":
-            skip_next_as_username = True
+        if skip_next:
+            skip_next = False
             continue
-        if skip_next_as_username:
-            skip_next_as_username = False
+        if not s or len(s) <= 2:
             continue
-        if p in skip_prefixes:
+        # Skip UUID-like segments (hex chars and dashes, length > 8)
+        if len(s) > 8 and all(c in "0123456789abcdef-" for c in s.lower()):
             continue
-        if len(p) <= 2:
-            continue
-        meaningful.append(p)
+        meaningful.append(s)
 
     if meaningful:
-        # Return last 1-2 meaningful segments joined
-        return "/".join(meaningful[-2:]) if len(meaningful) > 1 else meaningful[-1]
+        name = "/".join(meaningful[-2:]) if len(meaningful) > 1 else meaningful[0]
+    else:
+        # Fallback: use session file's first few chars for uniqueness
+        stem = Path(path_str).stem
+        name = f"project-{stem[:6]}"
 
-    # Fallback: use the session file stem
-    stem = Path(path_str).stem
-    return stem[:20] if len(stem) > 20 else stem
+    if is_subagent:
+        name = f"{name} (subagent)"
+
+    return name
 
 
 def scan_sessions(
     base_dir: Path | None = None,
+    include_subagents: bool = False,
 ) -> list[dict[str, Any]]:
     """Scan for Claude Code JSONL session files.
 
     Args:
         base_dir: Directory to search. Defaults to ~/.claude/projects/
+        include_subagents: If False (default), skip sessions in subagents/ dirs.
 
     Returns:
         List of session summary dicts.
@@ -68,6 +85,9 @@ def scan_sessions(
 
     sessions: list[dict[str, Any]] = []
     for jsonl_path in base_dir.rglob("*.jsonl"):
+        # Filter out subagent sessions unless explicitly requested
+        if not include_subagents and "subagents" in jsonl_path.parts:
+            continue
         summary = _extract_session_summary(jsonl_path)
         if summary is not None:
             sessions.append(summary)

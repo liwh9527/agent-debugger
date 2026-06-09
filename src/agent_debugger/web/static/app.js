@@ -23,8 +23,9 @@
             setupStatCardNavigation();
             renderTimeline();
             renderContextChart();
-            renderIterationsTable();
+            setTimeout(() => renderIterationsTable(), 100);
             renderDiagnostics();
+            renderInsightBanner();
             setupTabs();
             setupTimelineSearch();
             setupBackToTop();
@@ -117,6 +118,35 @@
 
         renderToolChart();
         renderTokensBarChart();
+    }
+
+    async function renderInsightBanner() {
+        const insightEl = document.getElementById('insight-banner');
+        if (!insightEl) return;
+        try {
+            const diagData = await fetchJSON('/api/diagnose');
+            if (diagData.findings.length === 0) {
+                insightEl.innerHTML = '<div class="insight-card insight-healthy">&#10003; Session looks healthy — no issues detected.</div>';
+            } else {
+                const inputPct = diagData.stats.input_pct;
+                const compactions = diagData.stats.compaction_count;
+                const retryCount = diagData.findings.filter(f => f.category === 'retry_loop').length;
+
+                let insight = '';
+                if (inputPct > 95) {
+                    insight = '&#9888; ' + inputPct + '% of cost goes to re-transmitting context. Splitting into shorter sessions could save 30-50%.';
+                } else if (retryCount > 10) {
+                    insight = '&#9888; ' + retryCount + ' retry loops detected — tools may be returning unhelpful results.';
+                } else if (compactions > 5) {
+                    insight = '&#9888; Context was compressed ' + compactions + ' times — session is pushing context window limits.';
+                } else {
+                    insight = '&#9888; Found ' + diagData.findings.length + ' potential issues across ' + analysisData.total_iterations + ' iterations.';
+                }
+                insightEl.innerHTML = '<div class="insight-card insight-warning">' + insight + '</div>';
+            }
+        } catch (err) {
+            // Silently skip — insight banner is non-critical
+        }
     }
 
     function computeTotalDuration() {
@@ -785,19 +815,33 @@
 
                 for (const [category, findings] of Object.entries(grouped)) {
                     const meta = categoryLabels[category] || { label: category, icon: '•', color: '#94a3b8' };
+
+                    // Sub-group similar findings to build a summary
+                    const subGroups = {};
+                    findings.forEach(f => {
+                        const match = f.message.match(/Tool '?(\w+)'?|(\w+) called|utilization at/);
+                        const key = match ? (match[1] || match[2] || 'general') : 'general';
+                        if (!subGroups[key]) subGroups[key] = [];
+                        subGroups[key].push(f);
+                    });
+
+                    const toolNames = Object.keys(subGroups).filter(k => k !== 'general');
+                    const summaryText = toolNames.length > 0
+                        ? `${findings.length} occurrences involving ${toolNames.join(', ')}`
+                        : `${findings.length} occurrences`;
+
                     html += `<div class="diag-category">
                         <div class="diag-category-header" style="border-left-color: ${meta.color}">
                             <span class="diag-category-icon">${meta.icon}</span>
                             <span class="diag-category-label">${meta.label}</span>
+                            <span class="diag-category-summary">${summaryText}</span>
                             <span class="diag-category-count">${findings.length}</span>
                         </div>
                         <div class="diag-category-items">`;
 
-                    // Show first 5, collapse rest
-                    const show = findings.slice(0, 5);
-                    const rest = findings.slice(5);
-
-                    show.forEach(f => {
+                    // Show top 3 most severe/interesting findings
+                    const topFindings = findings.slice(0, 3);
+                    topFindings.forEach(f => {
                         const iterLink = f.iteration != null
                             ? `<span class="diag-iter-link" onclick="scrollToIteration(${f.iteration})">Iteration #${f.iteration}</span>`
                             : '';
@@ -808,11 +852,11 @@
                         </div>`;
                     });
 
-                    if (rest.length > 0) {
-                        const catId = category.replace(/[^a-z]/g, '');
-                        html += `<div class="diag-more" id="more-${catId}" onclick="document.getElementById('hidden-${catId}').style.display='block'; this.style.display='none'">&#9660; Show ${rest.length} more</div>`;
+                    if (findings.length > 3) {
+                        const catId = category.replace(/[^a-z]/gi, '');
+                        html += `<div class="diag-more" onclick="document.getElementById('hidden-${catId}').style.display='block'; this.style.display='none'">&#9660; Show ${findings.length - 3} more</div>`;
                         html += `<div id="hidden-${catId}" style="display:none">`;
-                        rest.forEach(f => {
+                        findings.slice(3).forEach(f => {
                             const iterLink = f.iteration != null
                                 ? `<span class="diag-iter-link" onclick="scrollToIteration(${f.iteration})">Iteration #${f.iteration}</span>`
                                 : '';
