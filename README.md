@@ -28,13 +28,13 @@ Agent Debugger operates at the **Agent Loop iteration level** — giving you a s
 ## Quick Start
 
 ```bash
-pip install agent-debugger
+pip install agentloop-debugger
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv add agent-debugger
+uv add agentloop-debugger
 ```
 
 Then point it at a trace file:
@@ -107,6 +107,42 @@ agent-debugger serve trace.json --port 3000 --no-open
 ```
 
 Opens an interactive web UI in your browser with tabs for Overview, Timeline, Context Window visualization, and per-Iteration inspection.
+
+### `scan` — Discover local sessions
+
+```bash
+agent-debugger scan                    # list recent Claude Code sessions
+agent-debugger scan --sort cost        # sort by estimated cost
+agent-debugger scan --limit 5          # show top 5
+```
+
+Automatically scans `~/.claude/projects/` for Claude Code session files and displays a summary table.
+
+### `diagnose` — Smart diagnostic report
+
+```bash
+agent-debugger diagnose trace.jsonl
+```
+
+Runs automated checks (context pressure, retry loops, cost hotspots, efficiency) and produces actionable recommendations with estimated savings.
+
+### `diff` — Compare two traces
+
+```bash
+agent-debugger diff trace_v1.json trace_v2.json
+```
+
+Side-by-side comparison of iterations, tokens, cost, efficiency, and tool usage changes with color-coded deltas.
+
+### CI Integration
+
+```bash
+agent-debugger analyze trace.json --fail-if-cost-above 1.0
+agent-debugger analyze trace.json --fail-if-errors
+agent-debugger analyze trace.json --fail-if-efficiency-below 0.05
+```
+
+Returns exit code 1 when thresholds are violated — use in CI pipelines to enforce quality gates.
 
 ## Supported Frameworks
 

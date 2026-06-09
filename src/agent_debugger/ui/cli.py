@@ -14,7 +14,10 @@ from rich.text import Text
 
 from agent_debugger import __version__
 from agent_debugger.analysis.analyzer import TraceAnalyzer
+from agent_debugger.analysis.diagnostics import DiagnosticEngine
+from agent_debugger.analysis.diff import compare_traces
 from agent_debugger.core.loader import load_trace
+from agent_debugger.core.scanner import scan_sessions, shorten_path
 from agent_debugger.web.server import start_server
 
 console = Console()
@@ -112,6 +115,7 @@ def info(trace_file: str, output_format: str) -> None:
     default=None,
     help="Write output to file instead of stdout.",
 )
+@click.option("--anomalies-only", is_flag=True, help="Show only anomalous iterations.")
 def timeline(
     trace_file: str,
     verbose: bool,
@@ -120,16 +124,23 @@ def timeline(
     tail: int | None,
     filter_tool: str | None,
     output: str | None,
+    anomalies_only: bool,
 ) -> None:
     """Display iteration-by-iteration timeline of a trace."""
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
 
+    # Determine anomaly indices if needed
+    anomaly_indices: set[int] | None = None
+    if anomalies_only:
+        anomalies = analyzer.detect_anomalies()
+        anomaly_indices = {a["iteration"] for a in anomalies}
+
     if output_format == "json":
         if verbose:
             data = []
             for it in trace.iterations:
-                data.append({
+                item: dict = {
                     "index": it.index,
                     "think": it.think,
                     "tool_calls": [
@@ -144,9 +155,18 @@ def timeline(
                     "tokens": it.token_usage.total_tokens,
                     "duration_ms": it.duration_ms,
                     "error": it.error,
-                })
+                }
+                if anomaly_indices is not None:
+                    item["is_anomaly"] = it.index in anomaly_indices
+                data.append(item)
         else:
             data = analyzer.timeline_summary()
+            if anomaly_indices is not None:
+                for item in data:
+                    item["is_anomaly"] = item["index"] in anomaly_indices
+
+        if anomaly_indices is not None:
+            data = [item for item in data if item.get("is_anomaly")]
 
         if filter_tool:
             data = [
@@ -170,6 +190,8 @@ def timeline(
     console.print(f"\n[bold]Timeline:[/bold] {trace.agent_name} ({trace.model})\n")
 
     iterations = list(trace.iterations)
+    if anomaly_indices is not None:
+        iterations = [it for it in iterations if it.index in anomaly_indices]
     if filter_tool:
         iterations = [
             it for it in iterations if filter_tool in [tc.name for tc in it.tool_calls]
@@ -241,7 +263,32 @@ def timeline(
     default=None,
     help="Write output to file instead of stdout.",
 )
-def analyze(trace_file: str, max_context: int, output_format: str, output: str | None) -> None:
+@click.option(
+    "--fail-if-cost-above",
+    type=float,
+    default=None,
+    help="Exit with code 1 if estimated cost exceeds threshold.",
+)
+@click.option(
+    "--fail-if-errors",
+    is_flag=True,
+    help="Exit with code 1 if any errors are detected.",
+)
+@click.option(
+    "--fail-if-efficiency-below",
+    type=float,
+    default=None,
+    help="Exit with code 1 if token efficiency is below threshold.",
+)
+def analyze(
+    trace_file: str,
+    max_context: int,
+    output_format: str,
+    output: str | None,
+    fail_if_cost_above: float | None,
+    fail_if_errors: bool,
+    fail_if_efficiency_below: float | None,
+) -> None:
     """Analyze context window usage, cost, and anomalies."""
     trace = load_trace(trace_file)
     analyzer = TraceAnalyzer(trace)
@@ -335,7 +382,36 @@ def analyze(trace_file: str, max_context: int, output_format: str, output: str |
             f"across {len(trace.iterations)} iterations."
         )
 
+    # Recommendations from DiagnosticEngine
+    engine = DiagnosticEngine(trace, analyzer)
+    report = engine.run()
+    if report.recommendations:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for i, rec in enumerate(report.recommendations, 1):
+            savings = f" ({rec.estimated_savings})" if rec.estimated_savings else ""
+            console.print(f"  {i}. {rec.message}{savings}")
+
     console.print()
+
+    # CI threshold checks
+    exit_code = 0
+    if fail_if_cost_above is not None and cost["total_cost"] > fail_if_cost_above:
+        console.print(
+            f"[red]FAIL: Cost ${cost['total_cost']:.4f} exceeds "
+            f"threshold ${fail_if_cost_above}[/red]"
+        )
+        exit_code = 1
+    if fail_if_errors and analyzer.has_errors:
+        console.print("[red]FAIL: Errors detected[/red]")
+        exit_code = 1
+    if fail_if_efficiency_below is not None and efficiency < fail_if_efficiency_below:
+        console.print(
+            f"[red]FAIL: Efficiency {efficiency:.4f} below "
+            f"threshold {fail_if_efficiency_below}[/red]"
+        )
+        exit_code = 1
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 @main.command()
@@ -467,3 +543,275 @@ def serve(trace_file: str, port: int, no_open: bool) -> None:
     console.print(f"[dim]Trace:[/dim] {trace.agent_name} ({trace.model})")
     console.print("[dim]Press Ctrl+C to stop.[/dim]\n")
     start_server(trace, port=port, open_browser=not no_open)
+
+
+@main.command()
+@click.argument("trace_file_a", type=click.Path(exists=True))
+@click.argument("trace_file_b", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["rich", "json"]),
+    default="rich",
+    help="Output format.",
+)
+def diff(trace_file_a: str, trace_file_b: str, output_format: str) -> None:
+    """Compare two trace files side by side."""
+    trace_a = load_trace(trace_file_a)
+    trace_b = load_trace(trace_file_b)
+    result = compare_traces(trace_a, trace_b)
+
+    analyzer_a = TraceAnalyzer(trace_a)
+    analyzer_b = TraceAnalyzer(trace_b)
+
+    if output_format == "json":
+        from dataclasses import asdict
+
+        click.echo(json.dumps(asdict(result), indent=2))
+        return
+
+    # Header
+    console.print(
+        f"\n[bold]Diff:[/bold] {result.trace_a_name} vs {result.trace_b_name}\n"
+    )
+
+    # Comparison table
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Metric", style="cyan", width=20)
+    table.add_column("Trace A", justify="right", width=16)
+    table.add_column("Trace B", justify="right", width=16)
+    table.add_column("Delta", justify="right", width=22)
+
+    # Iterations
+    table.add_row(
+        "Iterations",
+        str(analyzer_a.total_iterations),
+        str(analyzer_b.total_iterations),
+        _format_delta_int(result.iterations_delta),
+    )
+
+    # Total Tokens
+    tokens_a = analyzer_a.total_tokens
+    tokens_b = analyzer_b.total_tokens
+    pct = (result.tokens_delta / tokens_a * 100) if tokens_a > 0 else 0
+    delta_str = f"{result.tokens_delta:+,}"
+    if pct != 0:
+        delta_str += f" ({pct:+.1f}%)"
+    color = "green" if result.tokens_delta <= 0 else "red"
+    table.add_row(
+        "Total Tokens",
+        f"{tokens_a:,}",
+        f"{tokens_b:,}",
+        f"[{color}]{delta_str}[/{color}]",
+    )
+
+    # Cost
+    cost_a = analyzer_a.cost_estimate()["total_cost"]
+    cost_b = analyzer_b.cost_estimate()["total_cost"]
+    cost_color = "green" if result.cost_delta <= 0 else "red"
+    table.add_row(
+        "Est. Cost",
+        f"${cost_a:.4f}",
+        f"${cost_b:.4f}",
+        f"[{cost_color}]${result.cost_delta:+.4f}[/{cost_color}]",
+    )
+
+    # Efficiency
+    eff_a = analyzer_a.token_efficiency()
+    eff_b = analyzer_b.token_efficiency()
+    eff_color = "green" if result.efficiency_delta >= 0 else "red"
+    table.add_row(
+        "Efficiency",
+        f"{eff_a * 100:.1f}%",
+        f"{eff_b * 100:.1f}%",
+        f"[{eff_color}]{result.efficiency_delta * 100:+.1f}%[/{eff_color}]",
+    )
+
+    console.print(table)
+
+    # Tool changes
+    if result.tool_count_changes:
+        console.print("\n[bold]Tool Changes:[/bold]")
+        for tool, (count_a, count_b) in result.tool_count_changes.items():
+            if count_a == 0:
+                console.print(f"  {tool}: [green]— → {count_b} (new)[/green]")
+            elif count_b == 0:
+                console.print(f"  {tool}: [red]{count_a} → — (removed)[/red]")
+            elif count_a == count_b:
+                console.print(f"  {tool}: {count_a} → {count_b} (=)")
+            else:
+                delta = count_b - count_a
+                console.print(f"  {tool}: {count_a} → {count_b} ({delta:+d})")
+
+    # Summary
+    console.print(f"\n[bold]Summary:[/bold] {result.summary}\n")
+
+
+def _format_delta_int(delta: int) -> str:
+    """Format an integer delta with color."""
+    if delta == 0:
+        return "0"
+    return f"{delta:+d}"
+
+
+@main.command()
+@click.option(
+    "--sort",
+    type=click.Choice(["time", "tokens", "cost", "iterations"]),
+    default="time",
+    help="Sort sessions by.",
+)
+@click.option("--limit", "-n", type=int, default=10, help="Max sessions to show.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["rich", "json"]),
+    default="rich",
+)
+def scan(sort: str, limit: int, output_format: str) -> None:
+    """Scan for Claude Code sessions on this machine."""
+    sessions = scan_sessions()
+
+    # Sort
+    sort_keys = {
+        "time": lambda s: s.get("last_modified") or "",
+        "tokens": lambda s: s.get("estimated_tokens", 0),
+        "cost": lambda s: s.get("estimated_cost", 0.0),
+        "iterations": lambda s: s.get("lines", 0),
+    }
+    sessions.sort(key=sort_keys[sort], reverse=True)
+
+    # Limit
+    sessions = sessions[:limit]
+
+    if output_format == "json":
+        click.echo(json.dumps(sessions, indent=2))
+        return
+
+    if not sessions:
+        console.print("[yellow]No Claude Code sessions found.[/yellow]")
+        return
+
+    table = Table(title="Claude Code Sessions")
+    table.add_column("#", justify="right", style="dim", width=4)
+    table.add_column("Path", style="cyan", max_width=40)
+    table.add_column("Agent", style="blue")
+    table.add_column("Model", style="magenta")
+    table.add_column("Tokens", justify="right", style="green")
+    table.add_column("Est. Cost", justify="right", style="yellow")
+    table.add_column("Duration", justify="right")
+    table.add_column("Last Modified", style="dim")
+
+    for i, s in enumerate(sessions, 1):
+        path_display = shorten_path(s["path"])
+        tokens_display = f"{s['estimated_tokens']:,}"
+        cost_display = f"${s['estimated_cost']:.4f}"
+
+        # Duration
+        duration_display = "—"
+        if s.get("start_time") and s.get("end_time"):
+            from datetime import datetime
+
+            start = datetime.fromisoformat(s["start_time"])
+            end = datetime.fromisoformat(s["end_time"])
+            delta = end - start
+            total_s = int(delta.total_seconds())
+            if total_s >= 3600:
+                duration_display = f"{total_s // 3600}h{(total_s % 3600) // 60}m"
+            elif total_s >= 60:
+                duration_display = f"{total_s // 60}m{total_s % 60}s"
+            else:
+                duration_display = f"{total_s}s"
+
+        # Last modified
+        mtime_display = "—"
+        if s.get("last_modified"):
+            from datetime import datetime
+
+            mtime = datetime.fromisoformat(s["last_modified"])
+            mtime_display = mtime.strftime("%Y-%m-%d %H:%M")
+
+        table.add_row(
+            str(i),
+            path_display,
+            s["agent_name"],
+            s["model"],
+            tokens_display,
+            cost_display,
+            duration_display,
+            mtime_display,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Found {len(sessions)} session(s)[/dim]")
+
+
+@main.command()
+@click.argument("trace_file", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["rich", "json"]),
+    default="rich",
+)
+def diagnose(trace_file: str, output_format: str) -> None:
+    """Run diagnostic analysis and get actionable recommendations."""
+    trace = load_trace(trace_file)
+    analyzer = TraceAnalyzer(trace)
+    engine = DiagnosticEngine(trace, analyzer)
+    report = engine.run()
+
+    if output_format == "json":
+        from dataclasses import asdict
+
+        data = {
+            "findings": [asdict(f) for f in report.findings],
+            "recommendations": [asdict(r) for r in report.recommendations],
+            "summary": report.summary,
+        }
+        click.echo(json.dumps(data, indent=2))
+        return
+
+    console.print(f"\n[bold]Diagnostics:[/bold] {trace.agent_name} ({trace.model})\n")
+
+    if not report.findings:
+        console.print(
+            Panel(
+                "[green]No issues detected — session looks healthy.[/green]",
+                title="Diagnostics",
+                border_style="green",
+            )
+        )
+    else:
+        # Group findings by severity
+        for severity, color in [("critical", "red"), ("warning", "yellow"), ("info", "blue")]:
+            sev_findings = [f for f in report.findings if f.severity == severity]
+            if not sev_findings:
+                continue
+            lines: list[str] = []
+            for f in sev_findings:
+                iter_label = f" (iter #{f.iteration})" if f.iteration is not None else ""
+                lines.append(f"• [{color}]{f.message}[/{color}]{iter_label}")
+            console.print(
+                Panel(
+                    "\n".join(lines),
+                    title=f"{severity.upper()} ({len(sev_findings)})",
+                    border_style=color,
+                )
+            )
+
+    if report.recommendations:
+        rec_lines: list[str] = []
+        for i, rec in enumerate(report.recommendations, 1):
+            savings = f" ({rec.estimated_savings})" if rec.estimated_savings else ""
+            rec_lines.append(f"{i}. {rec.message}{savings}")
+        console.print(
+            Panel(
+                "\n".join(rec_lines),
+                title="Recommendations",
+                border_style="green",
+            )
+        )
+
+    console.print(f"\n[bold]Summary:[/bold] {report.summary}")
+    console.print()

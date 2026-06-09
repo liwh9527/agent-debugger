@@ -1,4 +1,5 @@
 from agent_debugger.core.loader import load_trace
+from agent_debugger.core.scanner import scan_sessions, shorten_path
 from agent_debugger.core.schema import (
     AgentTrace,
     ContextWindow,
@@ -14,4 +15,6 @@ __all__ = [
     "TokenUsage",
     "ToolCall",
     "load_trace",
+    "scan_sessions",
+    "shorten_path",
 ]

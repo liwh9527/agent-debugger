@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-debugger"
+name = "agentloop-debugger"
 version = "0.1.0"
 description = "Interactive debugger for AI Agent loops — timeline, context window analysis, breakpoints & replay"
 readme = "README.md"
@@ -53,6 +53,9 @@ agent-debugger = "agent_debugger.ui.cli:main"
 Homepage = "https://github.com/liwh9527/agent-debugger"
 Repository = "https://github.com/liwh9527/agent-debugger"
 Issues = "https://github.com/liwh9527/agent-debugger/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_debugger"]
 
 [tool.ruff]
 target-version = "py310"

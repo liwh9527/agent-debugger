@@ -547,3 +547,38 @@ body {
     margin-bottom: 0.5rem;
     border-left: 3px solid var(--accent-dim);
 }
+
+.search-bar {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.search-bar input {
+    width: 100%;
+    padding: 0.6rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent-dim);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-bar input:focus {
+    border-color: var(--accent);
+}
+
+.search-bar input::placeholder {
+    color: var(--text-dim);
+}
+
+.search-count {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-top: 0.4rem;
+}
+
+.timeline-item.search-hidden {
+    display: none;
+}

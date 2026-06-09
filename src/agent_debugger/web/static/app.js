@@ -22,6 +22,7 @@
             renderContextChart();
             renderIterationsTable();
             setupTabs();
+            setupTimelineSearch();
         } catch (err) {
             document.querySelector(".content").innerHTML =
                 `<div class="stat-card"><p style="color:var(--error)">Failed to load data: ${err.message}</p></div>`;
@@ -165,6 +166,14 @@
         });
     }
 
+    function scrollToIteration(idx) {
+        document.querySelector('[data-tab="timeline"]').click();
+        setTimeout(function () {
+            var card = document.querySelector('[data-index="' + idx + '"]');
+            if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 300);
+    }
+
     function renderTokensBarChart() {
         const ctx = document.getElementById("chart-tokens").getContext("2d");
         let iterations = traceData.iterations;
@@ -193,6 +202,12 @@
                 scales: {
                     x: { ticks: { color: "#64748b", maxTicksLimit: 20 }, grid: { color: "rgba(63,63,95,0.3)" } },
                     y: { ticks: { color: "#64748b" }, grid: { color: "rgba(63,63,95,0.3)" } },
+                },
+                onClick: function (event, elements) {
+                    if (elements.length > 0) {
+                        var idx = iterations[elements[0].index].index;
+                        scrollToIteration(idx);
+                    }
                 },
             },
         });
@@ -276,6 +291,11 @@
                         ticks: { color: "#64748b", callback: (v) => v + "%" },
                         grid: { color: "rgba(63,63,95,0.3)" },
                     },
+                },
+                onClick: function (event, elements) {
+                    if (elements.length > 0 && elements[0].datasetIndex === 0) {
+                        scrollToIteration(elements[0].index);
+                    }
                 },
             },
         });
@@ -509,6 +529,45 @@
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+
+    function setupTimelineSearch() {
+        const input = document.getElementById("timeline-search");
+        const countEl = document.getElementById("search-count");
+        if (!input || !countEl) return;
+
+        let debounceTimer = null;
+
+        input.addEventListener("input", function () {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                const query = input.value.trim().toLowerCase();
+                const items = document.querySelectorAll("#timeline-container .timeline-item");
+                let shown = 0;
+                const total = items.length;
+
+                items.forEach(function (item) {
+                    if (!query) {
+                        item.classList.remove("search-hidden");
+                        shown++;
+                        return;
+                    }
+                    const text = item.textContent.toLowerCase();
+                    if (text.indexOf(query) !== -1) {
+                        item.classList.remove("search-hidden");
+                        shown++;
+                    } else {
+                        item.classList.add("search-hidden");
+                    }
+                });
+
+                if (query) {
+                    countEl.textContent = "Showing " + shown + " of " + total + " iterations";
+                } else {
+                    countEl.textContent = "";
+                }
+            }, 300);
+        });
     }
 
     document.addEventListener("DOMContentLoaded", init);
