@@ -28,6 +28,11 @@
     </nav>
 
     <main class="content">
+        <div id="loading" class="loading-overlay">
+            <div class="spinner"></div>
+            <p>Loading trace data...</p>
+        </div>
+
         <section class="tab-panel active" id="panel-overview">
             <div class="stats-grid" id="stats-grid"></div>
             <div class="charts-row">
@@ -44,9 +49,15 @@
 
         <section class="tab-panel" id="panel-timeline">
             <div class="search-bar">
-                <input type="text" id="timeline-search" placeholder="Search iterations (tool name, thinking text...)" />
+                <div class="search-wrapper">
+                    <input type="text" id="timeline-search" placeholder="Search iterations (tool name, thinking text...)" />
+                    <button id="search-clear" class="search-clear" style="display:none">&times;</button>
+                </div>
                 <div class="search-count" id="search-count"></div>
             </div>
+            <label class="toggle-label">
+                <input type="checkbox" id="hide-zero-tokens" /> Hide empty iterations (0 tokens)
+            </label>
             <div class="timeline" id="timeline-container"></div>
         </section>
 
@@ -76,6 +87,7 @@
         </section>
     </main>
 
+    <button id="back-to-top" class="back-to-top" title="Back to top">&uarr;</button>
     <script src="/static/app.js"></script>
 </body>
 </html>

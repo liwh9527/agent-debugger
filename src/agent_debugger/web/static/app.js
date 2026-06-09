@@ -16,16 +16,25 @@
                 fetchJSON("/api/trace"),
                 fetchJSON("/api/analysis"),
             ]);
+            document.getElementById('loading').style.display = 'none';
+            document.title = `${traceData.agent_name} (${traceData.model}) — Agent Debugger`;
             renderHeaderMeta();
             renderOverview();
+            setupStatCardNavigation();
             renderTimeline();
             renderContextChart();
             renderIterationsTable();
             setupTabs();
             setupTimelineSearch();
+            setupBackToTop();
+            setupKeyboardShortcuts();
         } catch (err) {
+            document.getElementById('loading').style.display = 'none';
             document.querySelector(".content").innerHTML =
-                `<div class="stat-card"><p style="color:var(--error)">Failed to load data: ${err.message}</p></div>`;
+                `<div class="stat-card" style="text-align:center;padding:3rem">
+                    <p style="color:var(--error);margin-bottom:1rem">Failed to load data: ${err.message}</p>
+                    <button onclick="location.reload()" class="page-btn">Retry</button>
+                </div>`;
         }
     }
 
@@ -203,6 +212,9 @@
                     x: { ticks: { color: "#64748b", maxTicksLimit: 20 }, grid: { color: "rgba(63,63,95,0.3)" } },
                     y: { ticks: { color: "#64748b" }, grid: { color: "rgba(63,63,95,0.3)" } },
                 },
+                onHover: (event, elements) => {
+                    event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                },
                 onClick: function (event, elements) {
                     if (elements.length > 0) {
                         var idx = iterations[elements[0].index].index;
@@ -363,10 +375,20 @@
             if (data.tool_calls.length > 0) {
                 html += "<h4>Tool Calls</h4>";
                 data.tool_calls.forEach((tc) => {
+                    let resultStr = typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2);
+                    const maxLen = 500;
+                    let truncated = false;
+                    if (resultStr && resultStr.length > maxLen) {
+                        resultStr = resultStr.substring(0, maxLen);
+                        truncated = true;
+                    }
+                    const resultHtml = tc.result
+                        ? `<pre>${escapeHtml(resultStr)}${truncated ? '\n<span style="color:var(--accent)">... (truncated)</span>' : ''}</pre>`
+                        : '';
                     html += `<div class="tool-result-card">
                         <div class="tool-name">${escapeHtml(tc.name)}${tc.duration_ms ? ` <span class="tool-duration">(${tc.duration_ms}ms)</span>` : ""}</div>
                         <pre>${escapeHtml(JSON.stringify(tc.arguments, null, 2))}</pre>
-                        ${tc.result ? `<pre>${escapeHtml(typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2))}</pre>` : ""}
+                        ${resultHtml}
                     </div>`;
                 });
             }
@@ -394,6 +416,7 @@
     const ITEMS_PER_PAGE = 50;
 
     function renderIterationsTable() {
+        requestAnimationFrame(() => {
         const iterations = traceData.iterations;
         const totalPages = Math.ceil(iterations.length / ITEMS_PER_PAGE);
         const start = iterationsPage * ITEMS_PER_PAGE;
@@ -441,6 +464,7 @@
         document.querySelectorAll("#iterations-table th").forEach((th) => {
             th.addEventListener("click", () => sortTable(th.dataset.sort));
         });
+        });
     }
 
     window.changeIterationsPage = function (delta) {
@@ -475,6 +499,16 @@
 
         traceData.iterations = iterations;
         renderIterationsTable();
+        updateSortIndicators();
+    }
+
+    function updateSortIndicators() {
+        document.querySelectorAll('#iterations-table th').forEach(th => {
+            th.textContent = th.textContent.replace(/ [▲▼]$/, '');
+            if (th.dataset.sort === currentSort.field) {
+                th.textContent += currentSort.asc ? ' ▲' : ' ▼';
+            }
+        });
     }
 
     async function showIterationDetail(index) {
@@ -534,11 +568,13 @@
     function setupTimelineSearch() {
         const input = document.getElementById("timeline-search");
         const countEl = document.getElementById("search-count");
+        const clearBtn = document.getElementById("search-clear");
+        const hideZeroCheckbox = document.getElementById("hide-zero-tokens");
         if (!input || !countEl) return;
 
         let debounceTimer = null;
 
-        input.addEventListener("input", function () {
+        function filterTimeline() {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(function () {
                 const query = input.value.trim().toLowerCase();
@@ -547,13 +583,23 @@
                 const total = items.length;
 
                 items.forEach(function (item) {
-                    if (!query) {
-                        item.classList.remove("search-hidden");
-                        shown++;
-                        return;
+                    let visible = true;
+
+                    if (query) {
+                        const text = item.textContent.toLowerCase();
+                        if (text.indexOf(query) === -1) {
+                            visible = false;
+                        }
                     }
-                    const text = item.textContent.toLowerCase();
-                    if (text.indexOf(query) !== -1) {
+
+                    if (visible && hideZeroCheckbox && hideZeroCheckbox.checked) {
+                        const tokensText = item.querySelector(".iter-tokens");
+                        if (tokensText && tokensText.textContent.match(/^0 tokens/)) {
+                            visible = false;
+                        }
+                    }
+
+                    if (visible) {
                         item.classList.remove("search-hidden");
                         shown++;
                     } else {
@@ -561,12 +607,73 @@
                     }
                 });
 
-                if (query) {
+                if (query || (hideZeroCheckbox && hideZeroCheckbox.checked)) {
                     countEl.textContent = "Showing " + shown + " of " + total + " iterations";
                 } else {
                     countEl.textContent = "";
                 }
             }, 300);
+        }
+
+        input.addEventListener("input", function () {
+            if (clearBtn) {
+                clearBtn.style.display = input.value ? 'block' : 'none';
+            }
+            filterTimeline();
+        });
+
+        if (clearBtn) {
+            clearBtn.addEventListener("click", function () {
+                input.value = '';
+                clearBtn.style.display = 'none';
+                input.dispatchEvent(new Event('input'));
+            });
+        }
+
+        if (hideZeroCheckbox) {
+            hideZeroCheckbox.addEventListener("change", function () {
+                filterTimeline();
+            });
+        }
+    }
+
+    function setupBackToTop() {
+        const btn = document.getElementById('back-to-top');
+        window.addEventListener('scroll', () => {
+            btn.classList.toggle('visible', window.scrollY > 300);
+        });
+        btn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
+
+    function setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            const tabs = ['overview', 'timeline', 'context', 'iterations'];
+            if (e.key >= '1' && e.key <= '4') {
+                const tabName = tabs[parseInt(e.key) - 1];
+                const tab = document.querySelector(`[data-tab="${tabName}"]`);
+                if (tab) tab.click();
+            }
+        });
+    }
+
+    function setupStatCardNavigation() {
+        const cards = document.querySelectorAll('.stat-card');
+        cards.forEach((card, i) => {
+            if (i === 1) {
+                card.style.cursor = 'pointer';
+                card.addEventListener('click', () => {
+                    document.querySelector('[data-tab="iterations"]').click();
+                });
+            }
+            if (i === 5) {
+                card.style.cursor = 'pointer';
+                card.addEventListener('click', () => {
+                    document.querySelector('[data-tab="timeline"]').click();
+                });
+            }
         });
     }
 
