@@ -180,8 +180,28 @@ def _extract_session_summary(path: Path) -> dict[str, Any] | None:
     except OSError:
         return None
 
-    # Estimate tokens from file size (rough: ~4 bytes per token)
-    estimated_tokens = file_size // 4
+    # Try to sum actual usage from parsed lines for a better token estimate
+    total_tokens = 0
+    for raw in first_lines + last_lines:
+        if '"usage"' in raw:
+            try:
+                obj = json.loads(raw)
+                usage = obj.get("message", {}).get("usage", {})
+                if not usage:
+                    usage = obj.get("usage", {})
+                input_t = usage.get("input_tokens", 0)
+                output_t = usage.get("output_tokens", 0)
+                total_tokens += input_t + output_t
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+    # If we found actual usage data, extrapolate from sampled lines
+    if total_tokens > 0 and lines_count > 0:
+        sampled_lines = len(first_lines) + len(last_lines)
+        estimated_tokens = int(total_tokens * (lines_count / max(sampled_lines, 1)))
+    else:
+        # Fallback to rough heuristic (~4 bytes per token)
+        estimated_tokens = file_size // 4
 
     # Estimate cost (using claude-sonnet-4 pricing as default: $3/M input, $15/M output)
     # Rough split: 80% input, 20% output

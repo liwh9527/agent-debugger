@@ -31,7 +31,9 @@
             setupBackToTop();
             setupKeyboardShortcuts();
             setupSidebar();
+            setupExport();
             loadSessions();
+            setupDragDrop();
         } catch (err) {
             document.getElementById('loading').style.display = 'none';
             document.querySelector(".content").innerHTML =
@@ -50,9 +52,19 @@
                 tabs.forEach((t) => t.classList.remove("active"));
                 panels.forEach((p) => p.classList.remove("active"));
                 tab.classList.add("active");
-                document.getElementById(`panel-${tab.dataset.tab}`).classList.add("active");
+                const tabName = tab.dataset.tab;
+                document.getElementById(`panel-${tabName}`).classList.add("active");
+                // Update URL hash
+                history.replaceState(null, '', `#${tabName}`);
             });
         });
+
+        // On page load, check hash and activate corresponding tab
+        const hash = window.location.hash.slice(1);
+        if (hash) {
+            const targetTab = document.querySelector(`[data-tab="${hash}"]`);
+            if (targetTab) targetTab.click();
+        }
     }
 
     function renderHeaderMeta() {
@@ -1033,6 +1045,135 @@
             }
         } catch (err) {
             alert('Failed to switch session: ' + err.message);
+        }
+    }
+
+    function setupDragDrop() {
+        const overlay = document.createElement('div');
+        overlay.id = 'drop-overlay';
+        overlay.className = 'drop-overlay';
+        overlay.innerHTML = '<div class="drop-message">Drop a .jsonl or .json trace file here<br><span class="drop-sub">Or use: agent-debugger serve &lt;file&gt;</span></div>';
+        document.body.appendChild(overlay);
+
+        let dragCounter = 0;
+
+        document.addEventListener('dragenter', function (e) {
+            e.preventDefault();
+            dragCounter++;
+            overlay.classList.add('visible');
+        });
+
+        document.addEventListener('dragleave', function (e) {
+            e.preventDefault();
+            dragCounter--;
+            if (dragCounter === 0) overlay.classList.remove('visible');
+        });
+
+        document.addEventListener('dragover', function (e) {
+            e.preventDefault();
+        });
+
+        document.addEventListener('drop', async function (e) {
+            e.preventDefault();
+            dragCounter = 0;
+            overlay.classList.remove('visible');
+
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith('.jsonl') && !file.name.endsWith('.json')) {
+                alert('Please drop a .jsonl or .json trace file');
+                return;
+            }
+
+            const text = await file.text();
+            try {
+                const res = await fetch('/api/load-inline', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ content: text, filename: file.name })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Failed to load: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Failed to load file: ' + err.message);
+            }
+        });
+    }
+
+    function setupExport() {
+        var btn = document.getElementById('export-btn');
+        if (btn) btn.addEventListener('click', exportReport);
+    }
+
+    async function exportReport() {
+        const btn = document.getElementById('export-btn');
+        btn.disabled = true;
+        btn.textContent = 'Exporting...';
+
+        try {
+            const [trace, analysis, diagData] = await Promise.all([
+                fetchJSON('/api/trace'),
+                fetchJSON('/api/analysis'),
+                fetchJSON('/api/diagnose'),
+            ]);
+
+            const html = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>Agent Debugger Report — ' + escapeHtml(trace.agent_name) + '</title>\n'
+                + '<style>\n'
+                + 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1e1e2e; color: #e2e8f0; padding: 2rem; max-width: 900px; margin: 0 auto; }\n'
+                + 'h1 { color: #a78bfa; } h2 { color: #7c3aed; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }\n'
+                + '.card { background: #2a2a3e; border-radius: 8px; padding: 1rem; margin: 1rem 0; }\n'
+                + '.stat { display: inline-block; margin: 0.5rem 1rem 0.5rem 0; }\n'
+                + '.stat-label { font-size: 0.7rem; text-transform: uppercase; color: #94a3b8; }\n'
+                + '.stat-value { font-size: 1.3rem; font-weight: 700; }\n'
+                + '.warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); padding: 0.75rem; border-radius: 6px; color: #fcd34d; }\n'
+                + '.rec { background: #2a2a3e; border-left: 3px solid #10b981; padding: 0.5rem 1rem; margin: 0.5rem 0; border-radius: 4px; }\n'
+                + 'table { width: 100%; border-collapse: collapse; } th, td { padding: 0.4rem 0.75rem; text-align: left; border-bottom: 1px solid #333; }\n'
+                + 'th { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; }\n'
+                + '</style></head><body>\n'
+                + '<h1>Agent Debugger Report</h1>\n'
+                + '<p>Generated: ' + new Date().toLocaleString() + '</p>\n'
+                + '<h2>Overview</h2>\n'
+                + '<div class="card">\n'
+                + '<div class="stat"><div class="stat-label">Agent</div><div class="stat-value">' + escapeHtml(trace.agent_name) + '</div></div>\n'
+                + '<div class="stat"><div class="stat-label">Model</div><div class="stat-value">' + escapeHtml(trace.model) + '</div></div>\n'
+                + '<div class="stat"><div class="stat-label">Iterations</div><div class="stat-value">' + analysis.total_iterations + '</div></div>\n'
+                + '<div class="stat"><div class="stat-label">Total Tokens</div><div class="stat-value">' + analysis.total_tokens.toLocaleString() + '</div></div>\n'
+                + '<div class="stat"><div class="stat-label">Est. Cost</div><div class="stat-value">$' + analysis.cost_estimate.total_cost.toFixed(2) + '</div></div>\n'
+                + '<div class="stat"><div class="stat-label">Efficiency</div><div class="stat-value">' + (analysis.token_efficiency * 100).toFixed(2) + '%</div></div>\n'
+                + '</div>\n'
+                + '<h2>Diagnostics</h2>\n'
+                + '<div class="warning">' + escapeHtml(diagData.summary) + '</div>\n'
+                + '<p>Input/Output ratio: <strong>' + diagData.stats.input_output_ratio + ':1</strong> | Input tokens: <strong>' + diagData.stats.input_pct + '%</strong> | Compaction events: <strong>' + diagData.stats.compaction_count + '</strong></p>\n'
+                + '<h2>Recommendations</h2>\n'
+                + diagData.recommendations.slice(0, 10).map(function (r) { return '<div class="rec"><strong>P' + r.priority + '</strong> ' + escapeHtml(r.message) + (r.estimated_savings ? ' <em>(' + escapeHtml(r.estimated_savings) + ')</em>' : '') + '</div>'; }).join('\n')
+                + '\n<h2>Tool Usage</h2>\n'
+                + '<table><tr><th>Tool</th><th>Count</th></tr>\n'
+                + Object.entries(analysis.tool_call_counts).sort(function (a, b) { return b[1] - a[1]; }).map(function (entry) { return '<tr><td>' + escapeHtml(entry[0]) + '</td><td>' + entry[1] + '</td></tr>'; }).join('\n')
+                + '\n</table>\n'
+                + '<h2>Findings Summary</h2>\n'
+                + '<table><tr><th>Category</th><th>Count</th></tr>\n'
+                + Object.entries(diagData.findings.reduce(function (acc, f) { acc[f.category] = (acc[f.category] || 0) + 1; return acc; }, {})).map(function (entry) { return '<tr><td>' + escapeHtml(entry[0]) + '</td><td>' + entry[1] + '</td></tr>'; }).join('\n')
+                + '\n</table>\n'
+                + '<footer style="margin-top: 2rem; color: #64748b; font-size: 0.8rem;">Generated by Agent Debugger</footer>\n'
+                + '</body></html>';
+
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'agent-debugger-report-' + trace.agent_name + '-' + new Date().toISOString().slice(0, 10) + '.html';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Export failed: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '↓ Export';
         }
     }
 

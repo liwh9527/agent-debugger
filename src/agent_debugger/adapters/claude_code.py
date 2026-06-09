@@ -193,6 +193,9 @@ class ClaudeCodeAdapter(BaseAdapter):
                 continue
 
             usage = msg.get("message", {}).get("usage", {})
+            if not usage.get("input_tokens"):
+                # Try alternative location (newer Claude Code formats)
+                usage = msg.get("usage", usage)
             total_input += usage.get("input_tokens", 0)
             total_output += usage.get("output_tokens", 0)
 

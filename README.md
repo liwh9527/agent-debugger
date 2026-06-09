@@ -31,6 +31,8 @@ Agent Debugger operates at the **Agent Loop iteration level** — giving you a s
 pip install agentloop-debugger
 ```
 
+The CLI command is `agent-debugger` (also available as `agentloop-debugger`).
+
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash

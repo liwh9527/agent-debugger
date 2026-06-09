@@ -169,6 +169,8 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/switch":
             self._handle_switch()
+        elif path == "/api/load-inline":
+            self._handle_load_inline()
         else:
             self._send_error(404)
 
@@ -223,6 +225,41 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
             })
         except Exception as e:
             self._send_json({"error": str(e)}, status=500)
+
+    def _handle_load_inline(self) -> None:
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0 or content_length > 50_000_000:  # 50MB max
+            self._send_json({"error": "File too large or empty"}, status=400)
+            return
+        try:
+            body = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, ValueError):
+            self._send_json({"error": "Invalid request"}, status=400)
+            return
+
+        content = body.get("content", "")
+        filename = body.get("filename", "uploaded.json")
+
+        import tempfile
+
+        suffix = ".jsonl" if filename.endswith(".jsonl") else ".json"
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=suffix, delete=False, encoding="utf-8"
+        ) as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            from agent_debugger.core.loader import load_trace
+
+            new_trace = load_trace(temp_path)
+            new_analyzer = TraceAnalyzer(new_trace)
+            _server_state["trace"] = new_trace
+            _server_state["analyzer"] = new_analyzer
+            _server_state["path"] = temp_path
+            self._send_json({"success": True})
+        except Exception as e:
+            self._send_json({"error": str(e)}, status=400)
 
     def _handle_iteration(self, path: str) -> None:
         try:
@@ -290,6 +327,7 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
                     "priority": r.priority,
                     "message": r.message,
                     "estimated_savings": r.estimated_savings,
+                    "how_to": r.how_to,
                 }
                 for r in report.recommendations
             ],

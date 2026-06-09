@@ -408,6 +408,8 @@ def analyze(
         for i, rec in enumerate(report.recommendations, 1):
             savings = f" ({rec.estimated_savings})" if rec.estimated_savings else ""
             console.print(f"  {i}. {rec.message}{savings}")
+            if rec.how_to:
+                console.print(f"     [dim]How: {rec.how_to}[/dim]")
 
     console.print()
 
@@ -783,6 +785,32 @@ def scan(sort: str, limit: int, output_format: str, include_subagents: bool) -> 
 
 
 @main.command()
+def quickstart() -> None:
+    """Show common usage examples."""
+    console.print("""
+[bold]Quick Start Guide[/bold]
+
+[cyan]1. View the most recent session:[/cyan]
+  agent-debugger serve
+
+[cyan]2. Get a diagnostic report:[/cyan]
+  agent-debugger diagnose ~/.claude/projects/.../session.jsonl
+
+[cyan]3. Compare two runs:[/cyan]
+  agent-debugger diff trace_v1.json trace_v2.json
+
+[cyan]4. Cost analysis with custom pricing:[/cyan]
+  agent-debugger analyze trace.json --input-price 5 --output-price 20
+
+[cyan]5. CI gate (fail if cost too high):[/cyan]
+  agent-debugger analyze trace.json --fail-if-cost-above 2.0
+
+[cyan]6. Find all local sessions:[/cyan]
+  agent-debugger scan
+""")
+
+
+@main.command()
 @click.argument("trace_file", type=click.Path(exists=True))
 @click.option(
     "--format",
@@ -841,6 +869,8 @@ def diagnose(trace_file: str, output_format: str) -> None:
         for i, rec in enumerate(report.recommendations, 1):
             savings = f" ({rec.estimated_savings})" if rec.estimated_savings else ""
             rec_lines.append(f"{i}. {rec.message}{savings}")
+            if rec.how_to:
+                rec_lines.append(f"   [dim]How: {rec.how_to}[/dim]")
         console.print(
             Panel(
                 "\n".join(rec_lines),

@@ -23,6 +23,7 @@ class Recommendation:
     priority: int  # 1-3
     message: str
     estimated_savings: str | None = None
+    how_to: str | None = None
 
 
 @dataclass
@@ -244,6 +245,10 @@ class DiagnosticEngine:
                     "repeated context compression"
                 ),
                 estimated_savings="30-50% fewer wasted tokens from re-summarization",
+                how_to=(
+                    "Start new sessions every 50-100 iterations, "
+                    "or when context utilization exceeds 70%"
+                ),
             ))
 
         # Retry loops
@@ -257,6 +262,10 @@ class DiagnosticEngine:
                 message=(
                     f"Tool '{tool}' was called {streak} times in a row — "
                     f"check if the tool is returning useful results"
+                ),
+                how_to=(
+                    "Review the tool results in the timeline view "
+                    "and fix error handling or validation logic"
                 ),
             ))
 
@@ -272,6 +281,10 @@ class DiagnosticEngine:
                     f"check for large file reads or verbose tool results"
                 ),
                 estimated_savings=f"~{fraction * 100:.0f}% token reduction if optimized",
+                how_to=(
+                    "Use agent-debugger inspect <trace> <iteration> "
+                    "to view what tools returned large outputs"
+                ),
             ))
 
         # Token efficiency
@@ -286,6 +299,7 @@ class DiagnosticEngine:
                     f"typical for long sessions. Shorter sessions would improve this to ~5-10%"
                 ),
                 estimated_savings="2-5x improvement in output per input token",
+                how_to="Break complex tasks into multiple shorter sessions with focused goals",
             ))
 
         # Sort by priority
