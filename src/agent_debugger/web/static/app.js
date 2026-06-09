@@ -313,6 +313,38 @@
                 },
             },
         });
+
+        // Add context metrics below chart
+        let metricsEl = chartContainer.querySelector('.context-metrics');
+        if (!metricsEl) {
+            metricsEl = document.createElement('div');
+            metricsEl.className = 'context-metrics';
+            chartContainer.appendChild(metricsEl);
+        }
+
+        const nonZero = utilization.filter(v => v > 0);
+        const peak = nonZero.length > 0 ? Math.max(...nonZero) * 100 : 0;
+        const avg = nonZero.length > 0 ? (nonZero.reduce((a, b) => a + b, 0) / nonZero.length) * 100 : 0;
+        const overThreshold = nonZero.filter(v => v > 0.8).length;
+
+        metricsEl.innerHTML = `
+            <div class="context-metric">
+                <span class="context-metric-label">Peak Utilization</span>
+                <span class="context-metric-value" style="color: ${peak > 80 ? '#ef4444' : '#10b981'}">${peak.toFixed(1)}%</span>
+            </div>
+            <div class="context-metric">
+                <span class="context-metric-label">Average</span>
+                <span class="context-metric-value">${avg.toFixed(1)}%</span>
+            </div>
+            <div class="context-metric">
+                <span class="context-metric-label">Above 80% Threshold</span>
+                <span class="context-metric-value">${overThreshold} iterations</span>
+            </div>
+            <div class="context-metric">
+                <span class="context-metric-label">Data Points</span>
+                <span class="context-metric-value">${nonZero.length} / ${utilization.length}</span>
+            </div>
+        `;
     }
 
     function renderTimeline() {
@@ -326,6 +358,9 @@
             timelineHeader = `<div class="timeline-header-note">${shownIterations} of ${totalIterations} iterations shown (${totalIterations - shownIterations} empty iterations hidden)</div>`;
         }
 
+        // Calculate max tokens for color gradient
+        const maxTokens = Math.max(...timeline.map(item => item.tokens), 1);
+
         container.innerHTML = timelineHeader + timeline
             .map((item) => {
                 const toolChips = item.tool_names
@@ -336,9 +371,17 @@
                     ? `<div class="thinking-preview">${escapeHtml(item.thinking_preview)}${item.thinking_preview.length >= 80 ? "..." : ""}</div>`
                     : "";
 
+                // Token-based border color
+                const ratio = item.tokens / maxTokens;
+                let borderColor;
+                if (ratio < 0.3) borderColor = '#10b981';
+                else if (ratio < 0.6) borderColor = '#7c3aed';
+                else if (ratio < 0.8) borderColor = '#f59e0b';
+                else borderColor = '#ef4444';
+
                 return `
                 <div class="timeline-item ${item.has_error ? "has-error" : ""}" data-index="${item.index}">
-                    <div class="timeline-card">
+                    <div class="timeline-card" style="border-left-color: ${borderColor}">
                         <div class="timeline-card-header">
                             <span class="iter-index">Iteration ${item.index}</span>
                             <span class="iter-tokens">${formatNumber(item.tokens)} tokens${item.duration_ms ? ` / ${item.duration_ms}ms` : ""}</span>
@@ -371,11 +414,12 @@
             let html = "";
 
             if (data.think) {
-                html += `<h4>Thinking</h4><pre>${escapeHtml(data.think)}</pre>`;
+                html += '<div class="detail-section"><div class="detail-section-title">Thinking</div>';
+                html += `<pre>${escapeHtml(data.think)}</pre></div>`;
             }
 
             if (data.tool_calls.length > 0) {
-                html += "<h4>Tool Calls</h4>";
+                html += '<div class="detail-section"><div class="detail-section-title">Tool Calls</div>';
                 data.tool_calls.forEach((tc) => {
                     let resultStr = typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2);
                     const maxLen = 500;
@@ -385,18 +429,20 @@
                         truncated = true;
                     }
                     const resultHtml = tc.result
-                        ? `<pre>${escapeHtml(resultStr)}${truncated ? '\n<span style="color:var(--accent)">... (truncated)</span>' : ''}</pre>`
+                        ? `<div class="tool-result"><pre>${escapeHtml(resultStr)}${truncated ? '\n...(truncated)' : ''}</pre></div>`
                         : '';
                     html += `<div class="tool-result-card">
                         <div class="tool-name">${escapeHtml(tc.name)}${tc.duration_ms ? ` <span class="tool-duration">(${tc.duration_ms}ms)</span>` : ""}</div>
-                        <pre>${escapeHtml(JSON.stringify(tc.arguments, null, 2))}</pre>
+                        <div class="tool-args"><pre>${escapeHtml(JSON.stringify(tc.arguments, null, 2))}</pre></div>
                         ${resultHtml}
                     </div>`;
                 });
+                html += '</div>';
             }
 
             if (data.error) {
-                html += `<h4>Error</h4><pre style="color:var(--error)">${escapeHtml(data.error)}</pre>`;
+                html += '<div class="detail-section"><div class="detail-section-title">Error</div>';
+                html += `<pre style="color:var(--error)">${escapeHtml(data.error)}</pre></div>`;
             }
 
             if (!html) {
@@ -742,7 +788,20 @@
                     });
 
                     if (rest.length > 0) {
-                        html += `<div class="diag-more">... and ${rest.length} more</div>`;
+                        const catId = category.replace(/[^a-z]/g, '');
+                        html += `<div class="diag-more" id="more-${catId}" onclick="document.getElementById('hidden-${catId}').style.display='block'; this.style.display='none'">&#9660; Show ${rest.length} more</div>`;
+                        html += `<div id="hidden-${catId}" style="display:none">`;
+                        rest.forEach(f => {
+                            const iterLink = f.iteration != null
+                                ? `<span class="diag-iter-link" onclick="scrollToIteration(${f.iteration})">Iteration #${f.iteration}</span>`
+                                : '';
+                            html += `<div class="diag-item diag-${f.severity}">
+                                <span class="diag-severity">${f.severity}</span>
+                                ${iterLink}
+                                <span class="diag-message">${escapeHtml(f.message)}</span>
+                            </div>`;
+                        });
+                        html += '</div>';
                     }
 
                     html += '</div></div>';
