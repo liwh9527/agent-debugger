@@ -8,6 +8,47 @@ from pathlib import Path
 from typing import Any
 
 
+def extract_project_name(path_str: str) -> str:
+    """Extract a human-readable project name from Claude Code session path.
+
+    Path pattern: ~/.claude/projects/-Users-x-Documents-project-myapp/abc.jsonl
+    The directory name encodes the original project path with dashes.
+    """
+    parent = Path(path_str).parent.name  # e.g. "-Users-liwh-Documents-project-myapp"
+
+    # Remove leading dash, split by dash, find meaningful segments
+    parts = parent.lstrip("-").split("-")
+
+    # Common path segments to skip when looking for project identity
+    skip_prefixes = {"Users", "Documents", "home", "src", "code"}
+
+    # Find meaningful segments after skipping known prefixes and username
+    meaningful = []
+    skip_next_as_username = False
+    for p in parts:
+        if not p:
+            continue
+        if p == "Users":
+            skip_next_as_username = True
+            continue
+        if skip_next_as_username:
+            skip_next_as_username = False
+            continue
+        if p in skip_prefixes:
+            continue
+        if len(p) <= 2:
+            continue
+        meaningful.append(p)
+
+    if meaningful:
+        # Return last 1-2 meaningful segments joined
+        return "/".join(meaningful[-2:]) if len(meaningful) > 1 else meaningful[-1]
+
+    # Fallback: use the session file stem
+    stem = Path(path_str).stem
+    return stem[:20] if len(stem) > 20 else stem
+
+
 def scan_sessions(
     base_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
@@ -130,6 +171,7 @@ def _extract_session_summary(path: Path) -> dict[str, Any] | None:
 
     return {
         "path": str(path),
+        "project_name": extract_project_name(str(path)),
         "file_size": file_size,
         "lines": lines_count,
         "start_time": start_time.isoformat() if start_time else None,

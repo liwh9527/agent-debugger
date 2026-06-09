@@ -29,6 +29,7 @@
             setupTimelineSearch();
             setupBackToTop();
             setupKeyboardShortcuts();
+            setupSidebar();
             loadSessions();
         } catch (err) {
             document.getElementById('loading').style.display = 'none';
@@ -852,7 +853,7 @@
     }
     window.renderDiagnostics = renderDiagnostics;
 
-    // Session Picker
+    // Session Sidebar
     function shortenPath(path) {
         const parts = path.split('/');
         if (parts.length > 3) {
@@ -870,48 +871,105 @@
     async function loadSessions() {
         try {
             const sessions = await fetchJSON('/api/sessions');
-            const select = document.getElementById('session-select');
-            if (!select) return;
+            const container = document.getElementById('sidebar-sessions');
+            if (!container) return;
 
             if (sessions.length === 0) {
-                select.innerHTML = '<option value="">No sessions found</option>';
+                container.innerHTML = '<div style="padding:1rem;color:var(--text-dim);text-align:center">No sessions found</div>';
                 return;
             }
 
-            select.innerHTML = sessions.map(function (s) {
-                const label = shortenPath(s.path) + ' (' + s.model + ', ' + formatTokens(s.estimated_tokens) + ' tokens)';
-                return '<option value="' + s.path.replace(/"/g, '&quot;') + '"' + (s.is_current ? ' selected' : '') + '>' + label + '</option>';
+            container.innerHTML = sessions.map(function (s) {
+                var name = s.project_name || shortenPath(s.path);
+                var tokens = formatTokens(s.estimated_tokens);
+                var date = s.last_modified ? new Date(s.last_modified).toLocaleDateString() : '';
+                var model = s.model || '';
+
+                return '<div class="session-item ' + (s.is_current ? 'active' : '') + '" data-path="' + escapeHtml(s.path) + '" data-name="' + escapeHtml(name.toLowerCase()) + '">'
+                    + '<span class="session-item-name">' + escapeHtml(name) + '</span>'
+                    + '<div class="session-item-meta">'
+                    + '<span>' + escapeHtml(model) + '</span>'
+                    + '<span>' + tokens + ' tokens</span>'
+                    + '<span>' + date + '</span>'
+                    + '</div></div>';
             }).join('');
 
-            select.addEventListener('change', function (e) {
-                if (!e.target.value) return;
-                switchSession(e.target.value);
+            // Click handlers
+            container.querySelectorAll('.session-item').forEach(function (item) {
+                item.addEventListener('click', function () {
+                    var path = item.getAttribute('data-path');
+                    if (!item.classList.contains('active')) {
+                        switchSession(path);
+                    }
+                });
             });
         } catch (err) {
             console.error('Failed to load sessions:', err);
         }
     }
 
-    async function switchSession(path) {
-        const select = document.getElementById('session-select');
-        if (select) select.disabled = true;
+    function setupSidebar() {
+        var sidebar = document.getElementById('sidebar');
+        var overlay = document.getElementById('sidebar-overlay');
+        var toggle = document.getElementById('sidebar-toggle');
+        var closeBtn = document.getElementById('sidebar-close');
+        var searchInput = document.getElementById('sidebar-search-input');
 
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('visible');
+        }
+
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('visible');
+        }
+
+        if (toggle) toggle.addEventListener('click', openSidebar);
+        if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
+        if (overlay) overlay.addEventListener('click', closeSidebar);
+
+        // Keyboard: S to open, Escape to close
+        document.addEventListener('keydown', function (e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.key === 's' || e.key === 'S') {
+                if (!e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    openSidebar();
+                }
+            }
+            if (e.key === 'Escape') {
+                closeSidebar();
+            }
+        });
+
+        // Search/filter
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var query = searchInput.value.toLowerCase();
+                document.querySelectorAll('.session-item').forEach(function (item) {
+                    var name = item.getAttribute('data-name') || '';
+                    item.classList.toggle('hidden', query !== '' && name.indexOf(query) === -1);
+                });
+            });
+        }
+    }
+
+    async function switchSession(path) {
         try {
-            const res = await fetch('/api/switch', {
+            var res = await fetch('/api/switch', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({path: path})
             });
-            const data = await res.json();
+            var data = await res.json();
             if (data.success) {
                 location.reload();
             } else {
                 alert('Failed to switch: ' + (data.error || 'Unknown error'));
-                if (select) select.disabled = false;
             }
         } catch (err) {
             alert('Failed to switch session: ' + err.message);
-            if (select) select.disabled = false;
         }
     }
 
