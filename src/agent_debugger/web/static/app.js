@@ -29,6 +29,7 @@
             setupTimelineSearch();
             setupBackToTop();
             setupKeyboardShortcuts();
+            loadSessions();
         } catch (err) {
             document.getElementById('loading').style.display = 'none';
             document.querySelector(".content").innerHTML =
@@ -850,6 +851,69 @@
         }
     }
     window.renderDiagnostics = renderDiagnostics;
+
+    // Session Picker
+    function shortenPath(path) {
+        const parts = path.split('/');
+        if (parts.length > 3) {
+            return '.../' + parts.slice(-2).join('/');
+        }
+        return path;
+    }
+
+    function formatTokens(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+        return n.toString();
+    }
+
+    async function loadSessions() {
+        try {
+            const sessions = await fetchJSON('/api/sessions');
+            const select = document.getElementById('session-select');
+            if (!select) return;
+
+            if (sessions.length === 0) {
+                select.innerHTML = '<option value="">No sessions found</option>';
+                return;
+            }
+
+            select.innerHTML = sessions.map(function (s) {
+                const label = shortenPath(s.path) + ' (' + s.model + ', ' + formatTokens(s.estimated_tokens) + ' tokens)';
+                return '<option value="' + s.path.replace(/"/g, '&quot;') + '"' + (s.is_current ? ' selected' : '') + '>' + label + '</option>';
+            }).join('');
+
+            select.addEventListener('change', function (e) {
+                if (!e.target.value) return;
+                switchSession(e.target.value);
+            });
+        } catch (err) {
+            console.error('Failed to load sessions:', err);
+        }
+    }
+
+    async function switchSession(path) {
+        const select = document.getElementById('session-select');
+        if (select) select.disabled = true;
+
+        try {
+            const res = await fetch('/api/switch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: path})
+            });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Failed to switch: ' + (data.error || 'Unknown error'));
+                if (select) select.disabled = false;
+            }
+        } catch (err) {
+            alert('Failed to switch session: ' + err.message);
+            if (select) select.disabled = false;
+        }
+    }
 
     document.addEventListener("DOMContentLoaded", init);
 })();

@@ -542,7 +542,7 @@ def serve(trace_file: str, port: int, no_open: bool) -> None:
     console.print(f"\n[bold]Starting web UI[/bold] on http://localhost:{port}")
     console.print(f"[dim]Trace:[/dim] {trace.agent_name} ({trace.model})")
     console.print("[dim]Press Ctrl+C to stop.[/dim]\n")
-    start_server(trace, port=port, open_browser=not no_open)
+    start_server(trace, port=port, open_browser=not no_open, trace_path=trace_file)
 
 
 @main.command()
