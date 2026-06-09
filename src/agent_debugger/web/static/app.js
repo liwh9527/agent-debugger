@@ -24,6 +24,7 @@
             renderTimeline();
             renderContextChart();
             renderIterationsTable();
+            renderDiagnostics();
             setupTabs();
             setupTimelineSearch();
             setupBackToTop();
@@ -182,6 +183,7 @@
             if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
         }, 300);
     }
+    window.scrollToIteration = scrollToIteration;
 
     function renderTokensBarChart() {
         const ctx = document.getElementById("chart-tokens").getContext("2d");
@@ -650,8 +652,8 @@
     function setupKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT') return;
-            const tabs = ['overview', 'timeline', 'context', 'iterations'];
-            if (e.key >= '1' && e.key <= '4') {
+            const tabs = ['overview', 'timeline', 'context', 'iterations', 'diagnostics'];
+            if (e.key >= '1' && e.key <= '5') {
                 const tabName = tabs[parseInt(e.key) - 1];
                 const tab = document.querySelector(`[data-tab="${tabName}"]`);
                 if (tab) tab.click();
@@ -676,6 +678,119 @@
             }
         });
     }
+
+    async function renderDiagnostics() {
+        const container = document.getElementById('diagnostics-container');
+        try {
+            const data = await fetchJSON('/api/diagnose');
+            let html = '';
+
+            // Summary card at top
+            const summaryClass = data.findings.length === 0 ? 'diag-healthy' : 'diag-warning';
+            html += `<div class="diag-summary ${summaryClass}">
+                <h3>${data.findings.length === 0 ? '✓' : '⚠'} ${data.summary}</h3>
+                <div class="diag-stats">
+                    <span>Input/Output ratio: <strong>${data.stats.input_output_ratio}:1</strong></span>
+                    <span>Input tokens: <strong>${data.stats.input_pct}%</strong> of total</span>
+                    <span>Compaction events: <strong>${data.stats.compaction_count}</strong></span>
+                </div>
+            </div>`;
+
+            // Findings section - grouped by category
+            if (data.findings.length > 0) {
+                const grouped = {};
+                data.findings.forEach(f => {
+                    if (!grouped[f.category]) grouped[f.category] = [];
+                    grouped[f.category].push(f);
+                });
+
+                const categoryLabels = {
+                    'context_pressure': { label: 'Context Pressure', icon: '📊', color: '#f59e0b' },
+                    'retry_loop': { label: 'Retry Loops', icon: '🔄', color: '#ef4444' },
+                    'cost_hotspot': { label: 'Cost Hotspots', icon: '💰', color: '#f97316' },
+                    'token_efficiency': { label: 'Token Efficiency', icon: '📉', color: '#8b5cf6' },
+                    'idle_gap': { label: 'Idle Gaps', icon: '⏸', color: '#06b6d4' },
+                    'error': { label: 'Errors', icon: '❌', color: '#ef4444' },
+                };
+
+                html += '<h3 class="diag-section-title">Findings</h3>';
+                html += '<div class="diag-findings">';
+
+                for (const [category, findings] of Object.entries(grouped)) {
+                    const meta = categoryLabels[category] || { label: category, icon: '•', color: '#94a3b8' };
+                    html += `<div class="diag-category">
+                        <div class="diag-category-header" style="border-left-color: ${meta.color}">
+                            <span class="diag-category-icon">${meta.icon}</span>
+                            <span class="diag-category-label">${meta.label}</span>
+                            <span class="diag-category-count">${findings.length}</span>
+                        </div>
+                        <div class="diag-category-items">`;
+
+                    // Show first 5, collapse rest
+                    const show = findings.slice(0, 5);
+                    const rest = findings.slice(5);
+
+                    show.forEach(f => {
+                        const iterLink = f.iteration != null
+                            ? `<span class="diag-iter-link" onclick="scrollToIteration(${f.iteration})">Iteration #${f.iteration}</span>`
+                            : '';
+                        html += `<div class="diag-item diag-${f.severity}">
+                            <span class="diag-severity">${f.severity}</span>
+                            ${iterLink}
+                            <span class="diag-message">${escapeHtml(f.message)}</span>
+                        </div>`;
+                    });
+
+                    if (rest.length > 0) {
+                        html += `<div class="diag-more">... and ${rest.length} more</div>`;
+                    }
+
+                    html += '</div></div>';
+                }
+                html += '</div>';
+            }
+
+            // Recommendations section
+            if (data.recommendations.length > 0) {
+                html += '<h3 class="diag-section-title">Recommendations</h3>';
+                html += '<div class="diag-recommendations">';
+
+                // Deduplicate: group similar tool recommendations
+                const seen = new Set();
+                const uniqueRecs = [];
+                data.recommendations.forEach(r => {
+                    const key = r.message.substring(0, 50);
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueRecs.push(r);
+                    }
+                });
+
+                uniqueRecs.slice(0, 10).forEach((r) => {
+                    const savings = r.estimated_savings
+                        ? `<span class="diag-savings">${escapeHtml(r.estimated_savings)}</span>`
+                        : '';
+                    html += `<div class="diag-rec">
+                        <span class="diag-rec-num">P${r.priority}</span>
+                        <span class="diag-rec-message">${escapeHtml(r.message)}</span>
+                        ${savings}
+                    </div>`;
+                });
+
+                if (uniqueRecs.length > 10) {
+                    html += `<div class="diag-more">${uniqueRecs.length - 10} more recommendations...</div>`;
+                }
+
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = `<div class="stat-card"><p style="color:var(--error)">Failed to load diagnostics: ${err.message}</p>
+                <button onclick="renderDiagnostics()" class="page-btn" style="margin-top:1rem">Retry</button></div>`;
+        }
+    }
+    window.renderDiagnostics = renderDiagnostics;
 
     document.addEventListener("DOMContentLoaded", init);
 })();

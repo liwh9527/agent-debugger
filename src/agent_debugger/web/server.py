@@ -134,6 +134,8 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
             self._send_json(_serialize_trace(self.trace))
         elif path == "/api/analysis":
             self._send_json(_serialize_analysis(self.analyzer))
+        elif path == "/api/diagnose":
+            self._handle_diagnose()
         elif path.startswith("/api/iteration/"):
             self._handle_iteration(path)
         elif path.startswith("/static/"):
@@ -186,6 +188,85 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
             ),
             "duration_ms": it.duration_ms,
             "error": it.error,
+        }
+        self._send_json(data)
+
+    def _handle_diagnose(self) -> None:
+        from agent_debugger.analysis.diagnostics import DiagnosticEngine
+
+        engine = DiagnosticEngine(self.trace, self.analyzer)
+        report = engine.run()
+        data = {
+            "findings": [
+                {
+                    "severity": f.severity,
+                    "category": f.category,
+                    "message": f.message,
+                    "iteration": f.iteration,
+                }
+                for f in report.findings
+            ],
+            "recommendations": [
+                {
+                    "priority": r.priority,
+                    "message": r.message,
+                    "estimated_savings": r.estimated_savings,
+                }
+                for r in report.recommendations
+            ],
+            "summary": report.summary,
+            "stats": {
+                "input_output_ratio": round(
+                    sum(
+                        it.token_usage.prompt_tokens
+                        for it in self.trace.iterations
+                    )
+                    / max(
+                        sum(
+                            it.token_usage.completion_tokens
+                            for it in self.trace.iterations
+                        ),
+                        1,
+                    ),
+                    1,
+                ),
+                "input_pct": round(
+                    sum(
+                        it.token_usage.prompt_tokens
+                        for it in self.trace.iterations
+                    )
+                    / max(
+                        sum(
+                            it.token_usage.total_tokens
+                            for it in self.trace.iterations
+                        ),
+                        1,
+                    )
+                    * 100,
+                    1,
+                ),
+                "compaction_count": len(
+                    [
+                        i
+                        for i in range(1, len(self.trace.iterations))
+                        if (
+                            self.trace.iterations[i].token_usage.prompt_tokens
+                            > 0
+                            and self.trace.iterations[
+                                i - 1
+                            ].token_usage.prompt_tokens
+                            > 0
+                            and self.trace.iterations[
+                                i
+                            ].token_usage.prompt_tokens
+                            < self.trace.iterations[
+                                i - 1
+                            ].token_usage.prompt_tokens
+                            * 0.7
+                        )
+                    ]
+                ),
+            },
         }
         self._send_json(data)
 
