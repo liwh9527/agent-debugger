@@ -56,10 +56,12 @@
 
     function renderHeaderMeta() {
         const meta = document.getElementById("header-meta");
+        const now = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
         meta.innerHTML = `
-            <span>${traceData.agent_name}</span>
-            <span>${traceData.model}</span>
-            <span>${analysisData.total_iterations} iterations</span>
+            <span class="header-meta-item">${traceData.agent_name}</span>
+            <span class="header-meta-item">${traceData.model}</span>
+            <span class="header-meta-item">${analysisData.total_iterations} iterations</span>
+            <span class="header-meta-time">Last loaded: ${now}</span>
         `;
     }
 
@@ -76,32 +78,38 @@
 
         grid.innerHTML = `
             <div class="stat-card">
-                <div class="stat-label">Agent</div>
+                <div class="stat-icon" style="background: rgba(124,58,237,0.15); color: #a78bfa">&#9889;</div>
+                <div class="stat-label">AGENT</div>
                 <div class="stat-value">${traceData.agent_name}</div>
                 <div class="stat-sub">${traceData.model}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Iterations</div>
+                <div class="stat-icon" style="background: rgba(239,68,68,0.15); color: #fca5a5">&#10227;</div>
+                <div class="stat-label">ITERATIONS</div>
                 <div class="stat-value">${analysisData.total_iterations}</div>
                 <div class="stat-sub">${analysisData.has_errors ? "Has errors" : "No errors"}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Total Tokens</div>
+                <div class="stat-icon" style="background: rgba(59,130,246,0.15); color: #93c5fd">&#9672;</div>
+                <div class="stat-label">TOTAL TOKENS</div>
                 <div class="stat-value">${formatNumber(analysisData.total_tokens)}</div>
                 <div class="stat-sub">Efficiency: <span style="color:${effColor}">${effPercent}%</span></div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Estimated Cost</div>
-                <div class="stat-value">$${cost.total_cost.toFixed(4)}</div>
-                <div class="stat-sub">In: $${cost.input_cost.toFixed(4)} / Out: $${cost.output_cost.toFixed(4)}</div>
+                <div class="stat-icon" style="background: rgba(245,158,11,0.15); color: #fcd34d">$</div>
+                <div class="stat-label">ESTIMATED COST</div>
+                <div class="stat-value">$${cost.total_cost.toFixed(2)}</div>
+                <div class="stat-sub">In: $${cost.input_cost.toFixed(2)} / Out: $${cost.output_cost.toFixed(2)}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Duration</div>
+                <div class="stat-icon" style="background: rgba(16,185,129,0.15); color: #6ee7b7">&#9719;</div>
+                <div class="stat-label">DURATION</div>
                 <div class="stat-value">${duration}</div>
                 <div class="stat-sub">${traceData.start_time ? new Date(traceData.start_time).toLocaleString() : "N/A"}</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">Tools Used</div>
+                <div class="stat-icon" style="background: rgba(236,72,153,0.15); color: #f9a8d4">&#9881;</div>
+                <div class="stat-label">TOOLS USED</div>
                 <div class="stat-value">${Object.keys(analysisData.tool_call_counts).length}</div>
                 <div class="stat-sub">${Object.values(analysisData.tool_call_counts).reduce((a, b) => a + b, 0)} total calls</div>
             </div>
@@ -386,7 +394,10 @@
                     <div class="timeline-card" style="border-left-color: ${borderColor}">
                         <div class="timeline-card-header">
                             <span class="iter-index">Iteration ${item.index}</span>
-                            <span class="iter-tokens">${formatNumber(item.tokens)} tokens${item.duration_ms ? ` / ${item.duration_ms}ms` : ""}</span>
+                            <div class="timeline-card-right">
+                                <span class="iter-tokens">${formatNumber(item.tokens)} tokens${item.duration_ms ? ` / ${item.duration_ms}ms` : ""}</span>
+                                <span class="iter-chevron">&#8250;</span>
+                            </div>
                         </div>
                         ${thinkPreview}
                         <div class="tool-chips">${toolChips}${errorChip}</div>
@@ -406,8 +417,10 @@
 
     async function toggleTimelineDetail(index) {
         const el = document.getElementById(`detail-${index}`);
+        const timelineItem = el.closest('.timeline-item');
         if (el.classList.contains("expanded")) {
             el.classList.remove("expanded");
+            timelineItem.classList.remove("expanded");
             return;
         }
 
@@ -423,20 +436,24 @@
             if (data.tool_calls.length > 0) {
                 html += '<div class="detail-section"><div class="detail-section-title">Tool Calls</div>';
                 data.tool_calls.forEach((tc) => {
-                    let resultStr = typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result, null, 2);
-                    const maxLen = 500;
-                    let truncated = false;
-                    if (resultStr && resultStr.length > maxLen) {
-                        resultStr = resultStr.substring(0, maxLen);
-                        truncated = true;
+                    const argsStr = escapeHtml(JSON.stringify(tc.arguments, null, 2));
+                    let resultStr = '';
+                    if (tc.result) {
+                        const raw = typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2);
+                        resultStr = escapeHtml(raw.length > 500 ? raw.substring(0, 500) + '\n...(truncated)' : raw);
                     }
-                    const resultHtml = tc.result
-                        ? `<div class="tool-result"><pre>${escapeHtml(resultStr)}${truncated ? '\n...(truncated)' : ''}</pre></div>`
-                        : '';
+
                     html += `<div class="tool-result-card">
                         <div class="tool-name">${escapeHtml(tc.name)}${tc.duration_ms ? ` <span class="tool-duration">(${tc.duration_ms}ms)</span>` : ""}</div>
-                        <div class="tool-args"><pre>${escapeHtml(JSON.stringify(tc.arguments, null, 2))}</pre></div>
-                        ${resultHtml}
+                        <div class="tool-dual-columns">
+                            <div class="tool-col">
+                                <pre>${argsStr}</pre>
+                            </div>
+                            ${resultStr ? `<div class="tool-col tool-col-result">
+                                <div class="tool-col-label">Result</div>
+                                <pre>${resultStr}</pre>
+                            </div>` : ''}
+                        </div>
                     </div>`;
                 });
                 html += '</div>';
@@ -456,9 +473,11 @@
 
             el.innerHTML = html;
             el.classList.add("expanded");
+            timelineItem.classList.add("expanded");
         } catch (err) {
             el.innerHTML = `<p style="color:var(--error)">Failed to load: ${err.message}</p>`;
             el.classList.add("expanded");
+            timelineItem.classList.add("expanded");
         }
     }
 
@@ -829,7 +848,7 @@
 
                 uniqueRecs.slice(0, 10).forEach((r) => {
                     const savings = r.estimated_savings
-                        ? `<span class="diag-savings">${escapeHtml(r.estimated_savings)}</span>`
+                        ? `<span class="diag-savings-badge">${escapeHtml(r.estimated_savings)}</span>`
                         : '';
                     html += `<div class="diag-rec">
                         <span class="diag-rec-num">P${r.priority}</span>
