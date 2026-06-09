@@ -169,11 +169,15 @@ def timeline(
             data = [item for item in data if item.get("is_anomaly")]
 
         if filter_tool:
-            data = [
-                item
-                for item in data
-                if filter_tool in (item.get("tool_names") or [])  # type: ignore[operator]
-            ]
+            def _has_tool(item: dict) -> bool:
+                # Non-verbose format
+                if "tool_names" in item:
+                    return filter_tool in item["tool_names"]
+                # Verbose format
+                if "tool_calls" in item:
+                    return filter_tool in [tc["name"] for tc in item["tool_calls"]]
+                return False
+            data = [item for item in data if _has_tool(item)]
         if head is not None:
             data = data[:head]
         elif tail is not None:
@@ -434,6 +438,10 @@ def analyze(
 def inspect(trace_file: str, iteration_index: int, output_format: str, output: str | None) -> None:
     """Inspect a single iteration in full detail."""
     trace = load_trace(trace_file)
+
+    if not trace.iterations:
+        click.echo("Error: Trace has no iterations.", err=True)
+        raise SystemExit(1)
 
     matching = [it for it in trace.iterations if it.index == iteration_index]
     if not matching:

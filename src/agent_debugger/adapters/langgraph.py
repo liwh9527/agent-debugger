@@ -23,31 +23,19 @@ class LangGraphAdapter(BaseAdapter):
         if path.suffix != ".json":
             return False
         try:
-            with open(path) as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            with open(path, encoding="utf-8") as f:
+                # Read only first 8KB to check for LangGraph markers
+                head = f.read(8192)
+            if "child_runs" not in head or "run_type" not in head:
+                return False
+            if "langgraph" not in head:
+                return False
+            return True
+        except (OSError, UnicodeDecodeError):
             return False
-        if not isinstance(data, dict):
-            return False
-        if "child_runs" not in data or "run_type" not in data:
-            return False
-        metadata = data.get("extra", {}).get("metadata", {})
-        has_langgraph_marker = any(
-            k.startswith("langgraph_") for k in metadata
-        )
-        child_runs = data.get("child_runs", [])
-        has_langgraph_child = any(
-            any(
-                k.startswith("langgraph_")
-                for k in run.get("extra", {}).get("metadata", {})
-            )
-            for run in child_runs
-            if isinstance(run, dict)
-        )
-        return has_langgraph_marker or has_langgraph_child
 
     def load(self, path: Path) -> AgentTrace:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         agent_name = data.get("name", "langgraph-agent")

@@ -23,17 +23,20 @@ class ClaudeCodeAdapter(BaseAdapter):
         if path.suffix != ".jsonl":
             return False
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 for i, line in enumerate(f):
                     if i >= 20:
                         break
                     line = line.strip()
                     if not line:
                         continue
-                    obj = json.loads(line)
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
                     if obj.get("type") in ("assistant", "user", "last-prompt", "permission-mode"):
                         return True
-        except (json.JSONDecodeError, OSError):
+        except OSError:
             return False
         return False
 
@@ -54,7 +57,7 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     def _read_messages(self, path: Path) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:

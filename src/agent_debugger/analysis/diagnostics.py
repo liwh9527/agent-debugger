@@ -178,6 +178,10 @@ class DiagnosticEngine:
         findings: list[Finding] = []
         iterations = self.trace.iterations
 
+        sum_iteration_ms = sum(it.duration_ms or 0 for it in iterations)
+        if sum_iteration_ms == 0:
+            return findings  # No per-iteration timing data available
+
         for i in range(1, len(iterations)):
             prev_dur = iterations[i - 1].duration_ms
             curr_dur = iterations[i].duration_ms
@@ -190,10 +194,10 @@ class DiagnosticEngine:
         # Alternative: use start/end time if available per-iteration
         # For now, check total session duration vs sum of iteration durations
         if self.trace.start_time and self.trace.end_time:
-            total_duration = (self.trace.end_time - self.trace.start_time).total_seconds()
-            sum_iteration_ms = sum(
-                it.duration_ms for it in iterations if it.duration_ms is not None
-            )
+            try:
+                total_duration = (self.trace.end_time - self.trace.start_time).total_seconds()
+            except TypeError:
+                return findings  # Mixed timezone awareness
             sum_iteration_s = sum_iteration_ms / 1000.0
             idle_s = total_duration - sum_iteration_s
             if idle_s > 300 and total_duration > 0:  # > 5 minutes idle

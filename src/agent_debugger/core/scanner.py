@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +82,7 @@ def _extract_session_summary(path: Path) -> dict[str, Any] | None:
         if file_size == 0:
             return None
 
-        mtime = datetime.fromtimestamp(path.stat().st_mtime)
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     except OSError:
         return None
 
@@ -93,7 +93,7 @@ def _extract_session_summary(path: Path) -> dict[str, Any] | None:
     model = "unknown"
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             first_lines: list[str] = []
             last_lines: list[str] = []
 

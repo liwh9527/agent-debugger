@@ -25,7 +25,7 @@ def load_trace(path: str | Path) -> AgentTrace:
 
 
 def _load_native_json(path: Path) -> AgentTrace:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     return AgentTrace.model_validate(data)
 

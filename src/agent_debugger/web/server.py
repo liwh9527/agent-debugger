@@ -83,12 +83,19 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         pass
 
+    def _cors_origin(self) -> str:
+        """Return an appropriate CORS origin, restricted to localhost."""
+        origin = self.headers.get("Origin", "")
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            return origin
+        return "http://localhost"
+
     def _send_json(self, data: dict | list, status: int = 200) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -104,7 +111,7 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -115,7 +122,7 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -124,7 +131,7 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         """Handle CORS preflight requests."""
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -146,8 +153,11 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
             self._handle_iteration(path)
         elif path.startswith("/static/"):
             rel = path[len("/static/"):]
-            file_path = STATIC_DIR / rel
-            if ".." in rel or not file_path.exists():
+            file_path = (STATIC_DIR / rel).resolve()
+            if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+                self._send_error(403)
+                return
+            if not file_path.exists():
                 self._send_error(404)
             else:
                 self._send_file(file_path)
@@ -176,10 +186,26 @@ class TraceRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_switch(self) -> None:
         content_length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(content_length))
+        if content_length == 0 or content_length > 1_000_000:
+            self._send_json({"error": "Invalid request body"}, status=400)
+            return
+        try:
+            body = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, ValueError):
+            self._send_json({"error": "Invalid JSON"}, status=400)
+            return
         new_path = body.get("path")
         if not new_path or not Path(new_path).exists():
             self._send_json({"error": "File not found"}, status=404)
+            return
+
+        allowed_base = Path.home() / ".claude" / "projects"
+        new_path_resolved = Path(new_path).resolve()
+        if not str(new_path_resolved).startswith(str(allowed_base.resolve())):
+            self._send_json(
+                {"error": "Path not allowed — only sessions in ~/.claude/projects/ can be loaded"},
+                status=403,
+            )
             return
 
         from agent_debugger.core.loader import load_trace
@@ -337,13 +363,9 @@ def start_server(
     _server_state["analyzer"] = analyzer
     _server_state["path"] = str(trace_path) if trace_path else ""
 
-    handler_class = type(
-        "BoundHandler",
-        (TraceRequestHandler,),
-        {"trace": trace, "analyzer": analyzer},
-    )
+    handler_class = type("BoundHandler", (TraceRequestHandler,), {})
 
-    server = HTTPServer(("0.0.0.0", port), handler_class)
+    server = HTTPServer(("127.0.0.1", port), handler_class)
 
     if open_browser:
         Timer(0.5, webbrowser.open, args=[f"http://localhost:{port}"]).start()
