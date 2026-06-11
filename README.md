@@ -156,6 +156,35 @@ Returns exit code 1 when thresholds are violated — use in CI pipelines to enfo
 
 Adapters auto-detect the file format. Just pass any supported file to any command.
 
+## Real-world Analysis
+
+Here's what Agent Debugger reveals when analyzing a real 703-iteration Claude Code session ($124 estimated cost, 50 hours of work):
+
+```bash
+$ agent-debugger diagnose session.jsonl
+
+Diagnostics: claude-code (glm-5)
+
+⚠ Found 53 warnings, 16 info across 703 iterations.
+  Input/Output ratio: 262:1
+  Input tokens: 99.6% of total
+  Compaction events: 10
+
+Recommendations:
+  P1  Split into shorter sessions (save 30-50%)
+      How: Start new sessions every 50-100 iterations
+  P2  Tool 'Bash' called 22 times in a row
+      How: Review tool results and fix error handling
+  P3  Token efficiency is 0.38% — shorter sessions would reach 5-10%
+```
+
+**Key insight:** 99.6% of the $124 cost went to re-transmitting context history. Splitting into 5 shorter sessions could have saved ~$60.
+
+Try it on your own sessions:
+```bash
+agent-debugger serve   # auto-opens your most recent Claude Code session
+```
+
 ## Web UI
 
 ```bash

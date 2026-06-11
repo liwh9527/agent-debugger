@@ -23,7 +23,8 @@ def test_info_file_not_found():
 
 
 def test_version():
+    from agent_debugger import __version__
     runner = CliRunner()
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert __version__ in result.output

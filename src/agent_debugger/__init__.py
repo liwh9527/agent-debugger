@@ -1,6 +1,6 @@
 """Agent Debugger — Interactive debugger for AI Agent loops."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from agent_debugger.analysis.analyzer import TraceAnalyzer
 from agent_debugger.core.loader import load_trace
